@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SUPERPROMPT_PENITA_MUNDIAL>
+  <DESCRIPCION_GENERAL>
+    <nombre>Peñita Mundial · IV Edición</nombre>
+    <proposito>
+      Aplicación privada de porra del Mundial 2026 para un grupo cerrado de participantes.
+      Permite registrar y consultar picks, clasificación, calendario completo de 104 partidos,
+      resultados en tiempo real cuando haya API key, comparativas Versus y zona privada Mi Club.
+      Se elimina por completo cualquier módulo, ruta o dependencia relacionada con probabilidades.
+    </proposito>
+    <plataforma>
+      <deploy>Vercel</deploy>
+      <framework>Next.js App Router</framework>
+      <lenguaje>TypeScript</lenguaje>
+      <estilos>Tailwind CSS + CSS global premium</estilos>
+    </plataforma>
+    <fuentes_de_datos>
+      <porra>Mock determinista generado con seededRandom(42) en lib/data.ts</porra>
+      <resultados>API-Football opcional via /api/results/fixtures</resultados>
+      <calendario>WORLD_CUP_MATCHES en lib/worldcup/schedule.ts</calendario>
+    </fuentes_de_datos>
+  </DESCRIPCION_GENERAL>
+
+  <VARIABLES_DE_ENTORNO>
+    <opcional>API_SPORTS_KEY</opcional>
+  </VARIABLES_DE_ENTORNO>
+
+  <DATOS_ESTATICOS>
+    <grupos>
+      <A>México, Sudáfrica, Corea del Sur, Chequia</A>
+      <B>Canadá, Bosnia y Herzegovina, Catar, Suiza</B>
+      <C>Brasil, Marruecos, Haití, Escocia</C>
+      <D>Estados Unidos, Paraguay, Australia, Turquía</D>
+      <E>Alemania, Curazao, Costa de Marfil, Ecuador</E>
+      <F>Países Bajos, Japón, Suecia, Túnez</F>
+      <G>Bélgica, Egipto, Irán, Nueva Zelanda</G>
+      <H>España, Cabo Verde, Arabia Saudí, Uruguay</H>
+      <I>Francia, Senegal, Irak, Noruega</I>
+      <J>Argentina, Argelia, Austria, Jordania</J>
+      <K>Portugal, RD Congo, Uzbekistán, Colombia</K>
+      <L>Inglaterra, Croacia, Ghana, Panamá</L>
+    </grupos>
+    <calendario>
+      <total_partidos>104</total_partidos>
+      <fases>72 grupos, 16 ronda de 32, 8 octavos, 4 cuartos, 2 semifinales, 1 tercer puesto, 1 final</fases>
+      <fuente>lib/worldcup/schedule.ts</fuente>
+      <regla_sede>Mostrar solo ciudad, nunca estadio ni país</regla_sede>
+    </calendario>
+    <puntuacion>
+      <partidos>signo 2, exacto 3, total 5</partidos>
+      <partido_doble>signo 4, exacto 10</partido_doble>
+      <grupo>posición correcta 1 punto por plaza</grupo>
+      <eliminatorias>dieciseisavos 6, octavos 10, cuartos 15, semifinales 20, final 25</eliminatorias>
+      <finales>tercero 20, subcampeón 30, campeón 50</finales>
+      <especiales>según lib/data.ts</especiales>
+    </puntuacion>
+  </DATOS_ESTATICOS>
+
+  <TEMA_VISUAL>
+    <modos>dark por defecto, light opcional con clase .light persistida en localStorage</modos>
+    <paleta>
+      <fondo>#050608</fondo>
+      <texto>#F6F7FB</texto>
+      <oro>#D4AF37</oro>
+      <verde>#27E6AC</verde>
+      <rojo>#FF7AA5</rojo>
+      <ambar>#DFBE38</ambar>
+      <clasificacion>#D9B449</clasificacion>
+      <participante>#6BBF78</participante>
+      <versus>#F0417A</versus>
+    </paleta>
+    <tipografia>
+      <body>DM Sans</body>
+      <titulos>Outfit</titulos>
+    </tipografia>
+    <navegacion>
+      <bottom_nav>Inicio, Ranking, Resultados, Mi Club, Versus</bottom_nav>
+      <theme_toggle>botón fijo arriba a la derecha</theme_toggle>
+    </navegacion>
+  </TEMA_VISUAL>
+
+  <SECCIONES>
+    <home>
+      <elementos>logo, countdown, accesos rápidos, top 3, mini porra, actividad, sistema de puntuación</elementos>
+      <quick_access>Resultados, Mi Club, Versus</quick_access>
+    </home>
+    <clasificacion>
+      <elementos>búsqueda, filtros, favoritos, lista ordenada, detalle modal</elementos>
+    </clasificacion>
+    <resultados>
+      <elementos>buscador, filtros por fase, región y ciudad, acordeón por fases, 104 partidos, indicador de conexión</elementos>
+      <conexion>En vivo / Calendario / Sin conexión</conexion>
+      <score_rule>solo mostrar marcador si shouldShowScore(status, home, away) es true</score_rule>
+    </resultados>
+    <mi_club>
+      <sin_login>pantalla de acceso con cualquier contraseña y usuario válido</sin_login>
+      <con_login>selector de equipo, KPI principal, tabs de resumen, partidos, grupos, eliminatorias, especiales y favoritos</con_login>
+    </mi_club>
+    <versus>
+      <requisito>requiere login</requisito>
+      <modos>general vs consenso, participante vs rival</modos>
+    </versus>
+    <mundial_2026>
+      <comportamiento>redirect server-side a /resultados</comportamiento>
+    </mundial_2026>
+  </SECCIONES>
+
+  <INTEGRACIONES>
+    <api_resultados>
+      <ruta>/api/results/fixtures</ruta>
+      <clave>API_SPORTS_KEY</clave>
+      <sin_clave>devolver fixtures vacíos y source calendar; el cliente usa el calendario base</sin_clave>
+      <con_clave>normalizar nombres, ciudad, status y marcador</con_clave>
+    </api_resultados>
+  </INTEGRACIONES>
+
+  <REGLAS>
+    <banderas>Todas emoji salvo Inglaterra, que usa /public/flags/Inglaterra.png</banderas>
+    <espana>resaltar con borde rojo cuando aparezca en tarjetas o listas</espana>
+    <logo>usar /public/Logo_Porra_Mundial_2026.webp como ruta segura</logo>
+    <demo>la app debe funcionar completa sin variables de entorno</demo>
+    <persistencia>
+      <theme>penita-theme</theme>
+      <user>penita_user</user>
+      <favorites>penita_favs_{userId}</favorites>
+    </persistencia>
+    <eliminado>
+      <item>app/probabilidades</item>
+      <item>api/worldcup-probabilities</item>
+      <item>lib/predictions</item>
+      <item>cualquier quick card o nav item asociado a probabilidades</item>
+    </eliminado>
+  </REGLAS>
+</SUPERPROMPT_PENITA_MUNDIAL>
