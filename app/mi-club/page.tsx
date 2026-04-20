@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Eye, EyeOff, LogOut, Shield, Star, User } from "lucide-react";
 import { CountryWithFlag, EmptyState, Flag, GroupBadge } from "@/components/ui";
@@ -83,7 +84,12 @@ function PrivateZone({ user, onLogout }: { user: { id: string; username: string 
     <div className="mx-auto max-w-[640px] px-4 pt-4">
       <div className="mb-4 flex items-center justify-between animate-fade-in">
         <h1 className="font-display text-2xl font-extrabold text-text-warm">Mi Club</h1>
-        <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}><LogOut size={14} /> Cerrar sesión</button>
+        <div className="flex items-center gap-2">
+          <Link href="/admin" className="btn btn-ghost !px-3.5 !py-2 text-xs">
+            <Shield size={14} /> Admin
+          </Link>
+          <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}><LogOut size={14} /> Cerrar sesión</button>
+        </div>
       </div>
 
       <div className="card mb-3 flex items-center gap-3 animate-fade-in">

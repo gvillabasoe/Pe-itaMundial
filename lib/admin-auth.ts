@@ -4,7 +4,9 @@ const ADMIN_USERNAME = "@canallita";
 const ADMIN_PASSWORD = "oyarsexo";
 
 function normalizeUsername(value: string) {
-  return value.trim().toLowerCase();
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return "";
+  return normalized.startsWith("@") ? normalized : `@${normalized}`;
 }
 
 export function isAdminCredentials(username: string, password: string) {

@@ -11,6 +11,7 @@ import { useScoredParticipants } from "@/lib/use-scored-participants";
 import { ALL_HOST_CITIES, getCityBgColor, getCityColor, getZoneForCity, REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
 import { getStatusDisplay, getStatusGroup, isLivePollingStatus } from "@/lib/config/match-status";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
+import type { AdminResults } from "@/lib/admin-results";
 
 interface ApiFixtureItem {
   apiId: number | null;
@@ -24,7 +25,6 @@ interface ApiFixtureItem {
   statusShort: string;
   city: string | null;
   score: { home: number | null; away: number | null };
-  supplemental?: boolean;
 }
 
 interface ResultsApiPayload {
@@ -51,7 +51,6 @@ interface MatchView {
   kickoff: string;
   score: { home: number | null; away: number | null };
   group: string | null;
-  supplemental: boolean;
 }
 
 type PredictionKind = "score" | "winner" | "finalists";
@@ -185,13 +184,26 @@ function getFallbackKickoff(match: WorldCupMatch): string {
   return KNOCKOUT_FALLBACK_BY_ID.get(match.id) || "2026-07-19T19:00:00Z";
 }
 
-function mergeScheduleWithApi(fixtures: ApiFixtureItem[]): MatchView[] {
-  const supplementalFixtures = fixtures.filter((fixture) => fixture.supplemental);
-  const worldCupFixtures = fixtures.filter((fixture) => !fixture.supplemental);
+function getAdminResultOverride(matchId: number, adminResults: AdminResults) {
+  const manualResult = adminResults.matchResults[String(matchId)];
+  if (typeof manualResult?.home !== "number" || typeof manualResult?.away !== "number") {
+    return null;
+  }
 
-  const groupMap = buildGroupFixtureMap(worldCupFixtures);
+  return {
+    statusShort: manualResult.statusShort || "FT",
+    minute: null,
+    score: {
+      home: manualResult.home,
+      away: manualResult.away,
+    },
+  };
+}
+
+function mergeScheduleWithApi(fixtures: ApiFixtureItem[], adminResults: AdminResults): MatchView[] {
+  const groupMap = buildGroupFixtureMap(fixtures);
   const stageMap = STAGE_ORDER.reduce<Record<MatchStage, ApiFixtureItem[]>>((acc, stage) => {
-    acc[stage] = worldCupFixtures
+    acc[stage] = fixtures
       .filter((fixture) => fixture.stage === stage)
       .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
     return acc;
@@ -218,17 +230,20 @@ function mergeScheduleWithApi(fixtures: ApiFixtureItem[]): MatchView[] {
     final: 0,
   });
 
-  const worldCupViews = WORLD_CUP_MATCHES.map((match) => {
-    let liveFixture: ApiFixtureItem | undefined;
+  return WORLD_CUP_MATCHES.map((match) => {
+    let apiFixture: ApiFixtureItem | undefined;
 
     if (match.stage === "group") {
       const key = `${normalizeKey(match.homeTeam)}|${normalizeKey(match.awayTeam)}`;
-      liveFixture = groupMap.get(key);
+      apiFixture = groupMap.get(key);
     } else {
       const stageIndex = stageOffsets[match.stage];
-      liveFixture = stageMap[match.stage][stageIndex];
+      apiFixture = stageMap[match.stage][stageIndex];
       stageOffsets[match.stage] = stageIndex + 1;
     }
+
+    const manualResult = getAdminResultOverride(match.id, adminResults);
+    const effectiveFixture = manualResult || apiFixture;
 
     return {
       id: match.id,
@@ -239,37 +254,15 @@ function mergeScheduleWithApi(fixtures: ApiFixtureItem[]): MatchView[] {
       zone: match.zone,
       homeTeam: match.homeTeam,
       awayTeam: match.awayTeam,
-      displayHomeTeam: liveFixture?.homeTeam || match.homeTeam,
-      displayAwayTeam: liveFixture?.awayTeam || match.awayTeam,
-      statusShort: liveFixture?.statusShort || "NS",
-      minute: liveFixture?.minute ?? null,
-      kickoff: liveFixture?.kickoff || getFallbackKickoff(match),
-      score: liveFixture?.score || { home: null, away: null },
+      displayHomeTeam: apiFixture?.homeTeam || match.homeTeam,
+      displayAwayTeam: apiFixture?.awayTeam || match.awayTeam,
+      statusShort: effectiveFixture?.statusShort || "NS",
+      minute: effectiveFixture?.minute ?? null,
+      kickoff: apiFixture?.kickoff || getFallbackKickoff(match),
+      score: effectiveFixture?.score || { home: null, away: null },
       group: match.stage === "group" ? getGroupForMatch(match.homeTeam, match.awayTeam) : null,
-      supplemental: false,
     } as MatchView;
   });
-
-  const supplementalViews = supplementalFixtures.map((fixture, index) => ({
-    id: fixture.apiId ?? 9000 + index,
-    stage: fixture.stage,
-    roundLabel: fixture.roundLabel,
-    competitionLabel: fixture.competitionLabel || fixture.roundLabel,
-    hostCity: fixture.city || "Sede pendiente",
-    zone: getZoneForCity(fixture.city) || null,
-    homeTeam: fixture.homeTeam,
-    awayTeam: fixture.awayTeam,
-    displayHomeTeam: fixture.homeTeam,
-    displayAwayTeam: fixture.awayTeam,
-    statusShort: fixture.statusShort,
-    minute: fixture.minute,
-    kickoff: fixture.kickoff,
-    score: fixture.score,
-    group: null,
-    supplemental: true,
-  } as MatchView));
-
-  return [...worldCupViews, ...supplementalViews];
 }
 
 function formatKickoff(kickoff: string) {
@@ -281,26 +274,6 @@ function formatKickoff(kickoff: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(kickoff));
-}
-
-function getNextSupplementalRefreshDelay(fixtures: ApiFixtureItem[], now = Date.now()): number | null {
-  const candidates = fixtures
-    .filter((fixture) => fixture.supplemental)
-    .map((fixture) => {
-      const kickoffAt = new Date(fixture.kickoff).getTime();
-      if (Number.isNaN(kickoffAt)) return null;
-
-      const status = (fixture.statusShort || "NS").toUpperCase();
-      if (status === "NS" && kickoffAt > now) {
-        return kickoffAt + 1000;
-      }
-
-      return null;
-    })
-    .filter((value): value is number => typeof value === "number");
-
-  if (candidates.length === 0) return null;
-  return Math.max(1000, Math.min(...candidates) - now);
 }
 
 function getStatusBadgeClass(statusShort: string) {
@@ -344,14 +317,6 @@ function formatPredictionScore(pick: MatchPick | undefined, flipped: boolean): s
 }
 
 function buildPredictionDataset(match: MatchView, currentUserId: string, participantsByRank: Team[]): MatchPredictionDataset {
-  if (match.supplemental) {
-    return {
-      rows: [],
-      emptyTitle: "Sin pronósticos asociados",
-      emptyText: "El partido Test no forma parte del calendario de la porra, así que no hay picks del club para este encuentro.",
-    };
-  }
-
   if (match.stage === "group") {
     const reference = getGroupFixtureReference(match);
 
@@ -496,7 +461,7 @@ function getPredictionPillStyle(row: MatchPredictionRow) {
 
 export default function ResultadosPage() {
   const { user } = useAuth();
-  const { participants } = useScoredParticipants();
+  const { adminResults, participants } = useScoredParticipants();
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<MatchStage | "all">("all");
   const [zoneFilter, setZoneFilter] = useState<Zone | "all">("all");
@@ -513,24 +478,11 @@ export default function ResultadosPage() {
   const [selectedMatch, setSelectedMatch] = useState<MatchView | null>(null);
   const [lockedMatch, setLockedMatch] = useState<MatchView | null>(null);
 
-  const { data, error, mutate } = useSWR<ResultsApiPayload>("/api/results/fixtures", fetcher, {
-    refreshInterval: (latestData?: ResultsApiPayload) => (latestData?.fixtures || []).some((fixture: ApiFixtureItem) => isLivePollingStatus(fixture.statusShort)) ? 30000 : 0,
+  const { data, error } = useSWR<ResultsApiPayload>("/api/results/fixtures", fetcher, {
+    refreshInterval: (latestData?: ResultsApiPayload) => (latestData?.fixtures || []).some((fixture: ApiFixtureItem) => isLivePollingStatus(fixture.statusShort)) ? 15000 : 0,
     revalidateOnFocus: true,
   });
 
-  useEffect(() => {
-    const fixtures = data?.fixtures || [];
-    if (fixtures.some((fixture) => isLivePollingStatus(fixture.statusShort))) return;
-
-    const delay = getNextSupplementalRefreshDelay(fixtures);
-    if (!delay) return;
-
-    const timeout = window.setTimeout(() => {
-      void mutate();
-    }, delay);
-
-    return () => window.clearTimeout(timeout);
-  }, [data, mutate]);
 
   useEffect(() => {
     if (!user) {
@@ -560,10 +512,8 @@ export default function ResultadosPage() {
   }, [lockedMatch, selectedMatch]);
 
   const connection = error ? "error" : data?.connection || "calendar";
-  const hasWorldCupApiRows = Boolean(data?.fixtures?.some((fixture) => !fixture.supplemental && fixture.apiId !== null));
-  const hasAnyTestFixture = Boolean(data?.fixtures?.some((fixture) => fixture.supplemental));
-  const hasTestApiRow = Boolean(data?.fixtures?.some((fixture) => fixture.supplemental && fixture.apiId !== null));
-  const mergedMatches = useMemo(() => mergeScheduleWithApi(data?.fixtures || []), [data]);
+  const hasWorldCupApiRows = Boolean(data?.fixtures?.some((fixture) => fixture.apiId !== null));
+  const mergedMatches = useMemo(() => mergeScheduleWithApi(data?.fixtures || [], adminResults), [adminResults, data]);
 
   const filteredMatches = useMemo(() => {
     let matches = [...mergedMatches];
@@ -599,21 +549,12 @@ export default function ResultadosPage() {
     return matches;
   }, [cityFilter, mergedMatches, search, stageFilter, zoneFilter]);
 
-  const testMatches = useMemo(
-    () => mergedMatches
-      .filter((match) => match.supplemental)
-      .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
-    [mergedMatches]
-  );
-
-  const filteredWorldCupCount = filteredMatches.filter((match) => !match.supplemental).length;
+  const filteredWorldCupCount = filteredMatches.length;
 
   const groupedByStage = useMemo(() => {
     const groups: Partial<Record<MatchStage, MatchView[]>> = {};
 
-    filteredMatches
-      .filter((match) => !match.supplemental)
-      .forEach((match) => {
+    filteredMatches.forEach((match) => {
         if (!groups[match.stage]) groups[match.stage] = [];
         groups[match.stage]!.push(match);
       });
@@ -704,25 +645,9 @@ export default function ResultadosPage() {
         ) : null}
 
         <p className="mb-3 text-[11px] text-text-muted">
-          {filteredWorldCupCount} partidos del Mundial{testMatches.length > 0 ? ` + ${testMatches.length} test` : ""}
+          {filteredWorldCupCount} partidos del Mundial
         </p>
 
-        {testMatches.length > 0 ? (
-          <section className="mb-3 animate-fade-in">
-            <div
-              className="flex items-center justify-between rounded-[16px] border border-[rgba(64,145,255,0.18)] bg-[rgba(64,145,255,0.08)] px-4 py-3 text-left text-text-warm"
-            >
-              <span className="font-display text-[15px] font-bold">
-                Test <span className="ml-1 text-[11px] font-normal text-text-muted">({testMatches.length})</span>
-              </span>
-            </div>
-            <div className="mt-2 flex flex-col gap-2">
-              {testMatches.map((match) => (
-                <ScheduleMatchCard key={`test-${match.id}-${match.displayHomeTeam}`} match={match} onSelect={handleSelectMatch} />
-              ))}
-            </div>
-          </section>
-        ) : null}
 
         {filteredWorldCupCount === 0 ? (
           <EmptyState title="Sin resultados" text="No hay partidos del Mundial que coincidan con tus filtros." icon={Search} />
@@ -766,19 +691,15 @@ export default function ResultadosPage() {
 
         {connection === "error" ? (
           <p className="status-note mb-6 mt-4 text-text-muted">
-            La API no responde ahora mismo. El Mundial mantiene el calendario base y el test de Premier League queda en modo placeholder hasta recuperar conexión.
+            La API no responde ahora mismo. El Mundial se muestra con el calendario base y, si existe un resultado guardado en Admin, ese marcador tiene prioridad visual.
           </p>
         ) : connection === "calendar" ? (
           <p className="status-note mb-6 mt-4 text-text-muted">
-            Se muestra el calendario base del Mundial. Cuando la API esté disponible, el test de Premier League tomará marcador, estado y minuto reales.
+            Se muestra el calendario base del Mundial. Añade una API key válida para cargar fixtures oficiales de API-Football.
           </p>
-        ) : !hasWorldCupApiRows || (hasAnyTestFixture && !hasTestApiRow) ? (
+        ) : !hasWorldCupApiRows ? (
           <p className="status-note mb-6 mt-4 text-text-muted">
-            {!hasWorldCupApiRows && hasAnyTestFixture && !hasTestApiRow
-              ? "API conectada. El Mundial sigue en calendario base y el partido Test permanece en placeholder hasta que API-Football publique ambos datasets."
-              : !hasWorldCupApiRows
-                ? "API conectada. El Mundial sigue en calendario base hasta que API-Football publique sus fixtures oficiales."
-                : "API conectada. El partido Test permanece en placeholder hasta que el fixture de Premier League quede disponible en API-Football."}
+            API conectada. El Mundial sigue en calendario base hasta que API-Football publique sus fixtures oficiales.
           </p>
         ) : null}
       </div>
@@ -851,7 +772,6 @@ function ScheduleMatchCard({ match, onSelect }: { match: MatchView; onSelect: (m
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[rgb(var(--divider)/0.06)] pt-2.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="badge badge-muted text-[10px]">{roundLabel}</span>
-          {match.supplemental ? <span className="badge badge-amber text-[10px]">Test API</span> : null}
         </div>
         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-text-muted">
           <Clock3 size={11} /> Hora Madrid · {formatKickoff(match.kickoff)}
@@ -896,8 +816,7 @@ function MatchDetailModal({ match, userId, participants, onClose }: { match: Mat
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className={statusBadgeClass}>{statusText}</span>
               <span className="badge badge-muted text-[10px]">{roundLabel}</span>
-              {match.supplemental ? <span className="badge badge-amber text-[10px]">Test API</span> : null}
-              {match.group ? <GroupBadge group={match.group} /> : null}
+                  {match.group ? <GroupBadge group={match.group} /> : null}
             </div>
           </div>
           <button onClick={onClose} className="rounded-xl border border-[rgb(var(--divider)/0.08)] bg-bg-2 p-2 text-text-muted transition-colors hover:text-text-primary">

@@ -1,80 +1,3 @@
-const FLAG_EMOJI_BY_KEY: Record<string, string> = {
-  mexico: "🇲🇽",
-  sudafrica: "🇿🇦",
-  corea_del_sur: "🇰🇷",
-  corea: "🇰🇷",
-  chequia: "🇨🇿",
-  republica_checa: "🇨🇿",
-  canada: "🇨🇦",
-  bosnia_y_herzegovina: "🇧🇦",
-  catar: "🇶🇦",
-  qatar: "🇶🇦",
-  suiza: "🇨🇭",
-  brasil: "🇧🇷",
-  marruecos: "🇲🇦",
-  haiti: "🇭🇹",
-  escocia: "🏴",
-  estados_unidos: "🇺🇸",
-  eeuu: "🇺🇸",
-  usa: "🇺🇸",
-  paraguay: "🇵🇾",
-  australia: "🇦🇺",
-  turquia: "🇹🇷",
-  alemania: "🇩🇪",
-  curazao: "🇨🇼",
-  costa_de_marfil: "🇨🇮",
-  costa_marfil: "🇨🇮",
-  ecuador: "🇪🇨",
-  paises_bajos: "🇳🇱",
-  holanda: "🇳🇱",
-  japon: "🇯🇵",
-  suecia: "🇸🇪",
-  tunez: "🇹🇳",
-  belgica: "🇧🇪",
-  egipto: "🇪🇬",
-  iran: "🇮🇷",
-  nueva_zelanda: "🇳🇿",
-  espana: "🇪🇸",
-  cabo_verde: "🇨🇻",
-  arabia_saudi: "🇸🇦",
-  arabia_saudita: "🇸🇦",
-  uruguay: "🇺🇾",
-  francia: "🇫🇷",
-  senegal: "🇸🇳",
-  irak: "🇮🇶",
-  iraq: "🇮🇶",
-  noruega: "🇳🇴",
-  argentina: "🇦🇷",
-  argelia: "🇩🇿",
-  austria: "🇦🇹",
-  jordania: "🇯🇴",
-  portugal: "🇵🇹",
-  rd_congo: "🇨🇩",
-  rd_del_congo: "🇨🇩",
-  uzbekistan: "🇺🇿",
-  colombia: "🇨🇴",
-  inglaterra: "🏴",
-  croacia: "🇭🇷",
-  ghana: "🇬🇭",
-  panama: "🇵🇦",
-  italia: "🇮🇹",
-  jamaica: "🇯🇲",
-  bolivia: "🇧🇴",
-  dinamarca: "🇩🇰",
-  emiratos_arabes_unidos: "🇦🇪",
-  eslovaquia: "🇸🇰",
-  gales: "🏴",
-  kosovo: "🇽🇰",
-  macedonia_del_norte: "🇲🇰",
-  nueva_caledonia: "🇳🇨",
-  polonia: "🇵🇱",
-  rumania: "🇷🇴",
-  surinam: "🇸🇷",
-  ucrania: "🇺🇦",
-  irlanda: "🇮🇪",
-  irlanda_del_norte: "🇬🇧",
-};
-
 const FILE_KEY_OVERRIDES: Record<string, string> = {
   estados_unidos: "usa",
   eeuu: "usa",
@@ -192,8 +115,19 @@ export function getFlagPath(country: string): string | null {
   return fileKey ? `/flags/${fileKey}.png` : null;
 }
 
+function getFallbackFlagLabel(country: string): string {
+  const letters = String(country || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((chunk) => chunk[0]?.toUpperCase() || "")
+    .join("");
+
+  return letters || String(country || "").slice(0, 2).toUpperCase() || "--";
+}
+
 export function getFlagEmoji(country: string): string {
-  return FLAG_EMOJI_BY_KEY[normalizeCountryKey(country)] || "🏳️";
+  return getFallbackFlagLabel(country);
 }
 
 export const KNOWN_FLAG_KEYS = Array.from(KNOWN_FLAG_FILE_KEYS.values());

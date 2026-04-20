@@ -1,6 +1,7 @@
 import { GROUPS, KNOCKOUT_ROUND_DEFS } from "@/lib/data";
+import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
 
-export const ADMIN_RESULTS_VERSION = 1;
+export const ADMIN_RESULTS_VERSION = 2;
 
 export type KnockoutRoundKey = (typeof KNOCKOUT_ROUND_DEFS)[number]["key"];
 export type GroupPositionValue = 0 | 1 | 2 | 3 | 4;
@@ -23,10 +24,17 @@ export interface AdminSpecialResults {
   minutoPrimerGol: number | null;
 }
 
+export interface AdminMatchResult {
+  home: number | null;
+  away: number | null;
+  statusShort: "NS" | "FT";
+}
+
 export interface AdminResults {
   version: number;
   configured: boolean;
   savedAt: string | null;
+  matchResults: Record<string, AdminMatchResult>;
   groupPositions: Record<string, GroupPositionValue>;
   knockoutRounds: Record<KnockoutRoundKey, string[]>;
   podium: AdminPodiumResults;
@@ -36,6 +44,7 @@ export interface AdminResults {
 export const ALL_TEAMS = Object.values(GROUPS).flat();
 export const ALL_TEAMS_SORTED = [...ALL_TEAMS].sort((a, b) => a.localeCompare(b, "es"));
 export const TEAM_SET = new Set(ALL_TEAMS);
+export const WORLD_CUP_MATCH_IDS = WORLD_CUP_MATCHES.map((match) => String(match.id));
 
 export const KNOCKOUT_COUNTS: Record<KnockoutRoundKey, number> = KNOCKOUT_ROUND_DEFS.reduce((acc, round) => {
   acc[round.key] = round.count;
@@ -81,6 +90,32 @@ function cleanMinute(value: unknown) {
   return Math.floor(numeric);
 }
 
+function cleanScore(value: unknown) {
+  if (value === "" || value === null || value === undefined) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.floor(numeric);
+}
+
+function sanitizeMatchResult(value: Partial<AdminMatchResult> | null | undefined): AdminMatchResult {
+  const home = cleanScore(value?.home);
+  const away = cleanScore(value?.away);
+
+  if (home === null || away === null) {
+    return {
+      home: null,
+      away: null,
+      statusShort: "NS",
+    };
+  }
+
+  return {
+    home,
+    away,
+    statusShort: "FT",
+  };
+}
+
 function normalizeRoundValues(roundKey: KnockoutRoundKey, values: unknown) {
   const requested = Array.isArray(values) ? values : [];
   const used = new Set<string>();
@@ -105,6 +140,10 @@ export function createDefaultAdminResults(): AdminResults {
     version: ADMIN_RESULTS_VERSION,
     configured: false,
     savedAt: null,
+    matchResults: WORLD_CUP_MATCH_IDS.reduce((acc, matchId) => {
+      acc[matchId] = { home: null, away: null, statusShort: "NS" };
+      return acc;
+    }, {} as Record<string, AdminMatchResult>),
     groupPositions: ALL_TEAMS.reduce((acc, team) => {
       acc[team] = 0;
       return acc;
@@ -132,17 +171,26 @@ export function createDefaultAdminResults(): AdminResults {
   };
 }
 
+export function isConfiguredMatchResult(value?: AdminMatchResult | null) {
+  return Boolean(value && typeof value.home === "number" && typeof value.away === "number");
+}
+
 export function hasConfiguredAdminResults(data: AdminResults) {
+  const hasMatchResults = Object.values(data.matchResults).some((value) => isConfiguredMatchResult(value));
   const hasGroups = Object.values(data.groupPositions).some((value) => value > 0);
   const hasRounds = Object.values(data.knockoutRounds).some((round) => round.some(Boolean));
   const hasPodium = Boolean(data.podium.campeon || data.podium.subcampeon);
   const hasSpecials = Object.entries(data.specialResults).some(([key, value]) => key === "minutoPrimerGol" ? value != null : Boolean(value));
-  return hasGroups || hasRounds || hasPodium || hasSpecials;
+  return hasMatchResults || hasGroups || hasRounds || hasPodium || hasSpecials;
 }
 
 export function sanitizeAdminResults(input: Partial<AdminResults> | null | undefined): AdminResults {
   const next = createDefaultAdminResults();
   const current = input || {};
+
+  WORLD_CUP_MATCH_IDS.forEach((matchId) => {
+    next.matchResults[matchId] = sanitizeMatchResult(current.matchResults?.[matchId]);
+  });
 
   ALL_TEAMS.forEach((team) => {
     next.groupPositions[team] = cleanPosition(current.groupPositions?.[team]);

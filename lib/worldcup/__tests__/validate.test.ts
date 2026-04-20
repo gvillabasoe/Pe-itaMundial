@@ -108,10 +108,10 @@ for (const team of teamsWithFlags) {
   assert(flag !== null, `Flag found for "${team}" → ${flag}`);
 }
 
-// Emoji fallback always works
+// Text fallback always works
 for (const team of teamsWithFlags) {
-  const emoji = getFlagEmoji(team);
-  assert(emoji !== "🏳️", `Emoji found for "${team}" → ${emoji}`);
+  const label = getFlagEmoji(team);
+  assert(label !== "--", `Fallback label found for "${team}" → ${label}`);
 }
 
 // ═══ PREDICTION TEAM ORDER ═══

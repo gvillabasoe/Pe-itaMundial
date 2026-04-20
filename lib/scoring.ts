@@ -1,5 +1,26 @@
-import { GROUPS, KNOCKOUT_ROUND_DEFS, SCORING, type KnockoutPick, type MatchPick, type Team } from "@/lib/data";
+import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, SCORING, type Fixture, type KnockoutPick, type MatchPick, type Team } from "@/lib/data";
 import type { AdminResults, KnockoutRoundKey } from "@/lib/admin-results";
+import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
+import { normalizeCountryKey } from "@/lib/flags";
+
+const FIXTURE_BY_ID = new Map(FIXTURES.map((fixture) => [fixture.id, fixture]));
+const WORLD_CUP_GROUP_MATCH_ID_BY_PAIR = new Map<string, string>();
+const ADMIN_MATCH_ID_BY_FIXTURE_ID = new Map<string, string>();
+
+function buildMatchKey(homeTeam: string, awayTeam: string) {
+  return `${normalizeCountryKey(homeTeam)}|${normalizeCountryKey(awayTeam)}`;
+}
+
+WORLD_CUP_MATCHES.filter((match) => match.stage === "group").forEach((match) => {
+  WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.set(buildMatchKey(match.homeTeam, match.awayTeam), String(match.id));
+});
+
+FIXTURES.forEach((fixture) => {
+  const matchId = WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.get(buildMatchKey(fixture.homeTeam, fixture.awayTeam));
+  if (matchId) {
+    ADMIN_MATCH_ID_BY_FIXTURE_ID.set(fixture.id, matchId);
+  }
+});
 
 function cloneMatchPicks(matchPicks: Record<string, MatchPick>) {
   return Object.fromEntries(
@@ -42,6 +63,73 @@ function isRoundConfigured(roundKey: KnockoutRoundKey, adminResults: AdminResult
 function isSpecialConfigured(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value);
   return String(value ?? "").trim() !== "";
+}
+
+function resolveGroupMatchResult(fixtureId: string, adminResults: AdminResults) {
+  const matchId = ADMIN_MATCH_ID_BY_FIXTURE_ID.get(fixtureId);
+  if (!matchId) return null;
+  const result = adminResults.matchResults[matchId];
+  if (typeof result?.home !== "number" || typeof result?.away !== "number") return null;
+  return result;
+}
+
+function getResultSign(home: number, away: number) {
+  if (home === away) return "draw" as const;
+  return home > away ? ("home" as const) : ("away" as const);
+}
+
+function scoreMatchPick(pick: MatchPick, actualHome: number, actualAway: number, isDouble: boolean) {
+  const exact = pick.home === actualHome && pick.away === actualAway;
+
+  if (exact) {
+    return {
+      points: isDouble ? SCORING.partidoDobleExacto : SCORING.resultadoExactoTotal,
+      status: "correct" as const,
+    };
+  }
+
+  const predictedSign = getResultSign(pick.home, pick.away);
+  const actualSign = getResultSign(actualHome, actualAway);
+
+  if (predictedSign === actualSign) {
+    return {
+      points: isDouble ? SCORING.partidoDobleSigno : SCORING.signo,
+      status: "sign" as const,
+    };
+  }
+
+  return {
+    points: 0,
+    status: "wrong" as const,
+  };
+}
+
+function scoreGroupMatchPicks(team: Team, adminResults: AdminResults) {
+  let points = 0;
+  const matchPicks = cloneMatchPicks(team.matchPicks);
+
+  Object.entries(matchPicks).forEach(([fixtureId, pick]) => {
+    const actual = resolveGroupMatchResult(fixtureId, adminResults);
+
+    if (!actual) {
+      matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
+      return;
+    }
+
+    const fixture = FIXTURE_BY_ID.get(fixtureId) as Fixture | undefined;
+    const isDouble = Boolean(fixture?.group && team.doubleMatches?.[fixture.group] === fixtureId);
+    const nextScore = scoreMatchPick(pick, actual.home as number, actual.away as number, isDouble);
+
+    matchPicks[fixtureId] = {
+      ...pick,
+      points: nextScore.points,
+      status: nextScore.status,
+    };
+
+    points += nextScore.points;
+  });
+
+  return { points, matchPicks };
 }
 
 function scoreGroupPositions(team: Team, adminResults: AdminResults) {
@@ -165,12 +253,14 @@ export function scoreParticipants(participants: Team[], adminResults: AdminResul
 
   const scored = participants.map((participant) => {
     const nextTeam = cloneTeam(participant);
-    const groupPoints = scoreGroupPositions(nextTeam, adminResults);
+    const matchScores = scoreGroupMatchPicks(nextTeam, adminResults);
+    const groupPositionPoints = scoreGroupPositions(nextTeam, adminResults);
     const knockout = scoreKnockoutRounds(nextTeam, adminResults);
     const podiumPoints = scorePodium(nextTeam, adminResults);
     const specialPoints = scoreSpecials(nextTeam, adminResults);
 
-    nextTeam.groupPoints = groupPoints;
+    nextTeam.matchPicks = matchScores.matchPicks;
+    nextTeam.groupPoints = matchScores.points + groupPositionPoints;
     nextTeam.knockoutPicks = knockout.knockoutPicks;
     nextTeam.finalPhasePoints = knockout.points + podiumPoints;
     nextTeam.specialPoints = specialPoints;

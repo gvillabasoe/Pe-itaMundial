@@ -4,19 +4,30 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getFlagEmoji, getFlagPath } from "@/lib/flags";
+import { getFlagPath } from "@/lib/flags";
 import { GROUP_COLORS } from "@/lib/data";
 
 const FLAG_SIZES = { sm: 18, md: 22, lg: 30 } as const;
 
+function getFlagFallbackLabel(country: string) {
+  const letters = country
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((chunk) => chunk[0]?.toUpperCase() || "")
+    .join("");
+
+  return letters || country.slice(0, 2).toUpperCase() || "--";
+}
+
 export function Flag({ country, size = "md", className = "" }: { country: string; size?: "sm" | "md" | "lg"; className?: string }) {
   const flagPath = getFlagPath(country);
   const [imgError, setImgError] = useState(false);
-  const emoji = getFlagEmoji(country);
 
   useEffect(() => {
     setImgError(false);
   }, [country, flagPath]);
+
   const px = FLAG_SIZES[size];
 
   if (flagPath && !imgError) {
@@ -33,15 +44,17 @@ export function Flag({ country, size = "md", className = "" }: { country: string
     );
   }
 
-  const fontSize = size === "sm" ? "text-sm" : size === "lg" ? "text-[20px]" : "text-base";
+  const fontSize = size === "sm" ? "text-[9px]" : size === "lg" ? "text-[11px]" : "text-[10px]";
+  const fallbackLabel = getFlagFallbackLabel(country);
+
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-[6px] border px-1.5 py-0.5 leading-none shadow-[0_4px_10px_rgba(var(--shadow-color),0.08)] ${fontSize} ${className}`}
-      style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.06)" }}
-      role="img"
+      className={`inline-flex items-center justify-center rounded-[6px] border px-1.5 py-0.5 font-bold uppercase tracking-[0.12em] leading-none shadow-[0_4px_10px_rgba(var(--shadow-color),0.08)] ${fontSize} ${className}`}
+      style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.06)", minWidth: px, minHeight: Math.round(px * 0.67) }}
       aria-label={country}
+      title={country}
     >
-      {emoji}
+      {fallbackLabel}
     </span>
   );
 }

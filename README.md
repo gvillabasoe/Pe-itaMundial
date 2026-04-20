@@ -6,13 +6,14 @@ Versión Vercel-ready de la porra del Mundial 2026, ya fusionada con la app prem
 
 - Inicio con logo, cuenta atrás, accesos rápidos, top 3, radar premium, actividad y sistema de puntuación completo.
 - Clasificación con búsqueda, filtros, favoritos persistentes y ficha detallada de cada equipo.
-- Resultados unificados con los 104 partidos, filtros por fase, región y ciudad, hora siempre en Europe/Madrid y un fixture de prueba Crystal Palace vs West Ham con resolución dinámica de fixture_id, polling real mientras está en vivo, marcador con fallback 0-0 y auto-hide solo tras 2 horas + FT/AET/PEN.
-- Mi Club con login demo, selector de equipo y tabs de resumen, partidos, grupos, eliminatorias, especiales y favoritos.
-- Versus privado contra consenso o rival concreto.
+- Resultados unificados con los 104 partidos del Mundial, filtros por fase, región y ciudad, hora siempre en Europe/Madrid, polling en vivo cada 15 segundos y prioridad visual de cualquier marcador guardado desde Admin.
+- Mi Club con login demo, selector de equipo, tabs de resumen, partidos, grupos, eliminatorias, especiales y favoritos, además de acceso directo a Admin.
+- Admin rediseñado con editor de resultados oficiales para los 104 partidos, filtros por grupo o fase, posiciones de grupos, eliminatorias, final y especiales.
 - Probabilidades de ganador vía Polymarket, con API interna en `/api/probabilities`, refresco periódico, hero premium, histórico y shortlist filtrada.
 - Tema dark/light persistente con anti-flash.
 - Ruta legado `/mundial-2026` redirigida a `/resultados`.
-- Banderas PNG para todas las selecciones disponibles en `public/flags`, no solo Inglaterra. Si falta alguna bandera concreta, la app cae de forma automática al emoji correspondiente.
+- Banderas PNG reales para toda la app usando los assets de `public/flags`; si falta un archivo concreto, la interfaz muestra un marcador neutro de texto, no emojis.
+- Documentación técnica de API-FOOTBALL para el Mundial 2026 incluida en `docs/api-football-world-cup-2026.md`.
 
 ## Credenciales demo
 
@@ -23,12 +24,14 @@ Versión Vercel-ready de la porra del Mundial 2026, ya fusionada con la app prem
 
 ```bash
 API_SPORTS_KEY=
+API_FOOTBALL_KEY=
 POLYMARKET_GAMMA_BASE=https://gamma-api.polymarket.com
 ```
 
 Notas:
 
-- `API_SPORTS_KEY` permite sobrescribir la clave server-side usada para el test fixture en vivo. Si la API no responde, la app mantiene el calendario base del Mundial y oculta el test fixture para no simular datos.
+- `API_SPORTS_KEY` o `API_FOOTBALL_KEY` habilitan las llamadas server-side a API-FOOTBALL para el Mundial 2026.
+- Si la API no responde o no hay clave configurada, la app mantiene el calendario base del Mundial y puede seguir mostrando los resultados oficiales cargados manualmente desde Admin.
 - `POLYMARKET_GAMMA_BASE` es opcional. La lectura de mercados se hace contra la Gamma API pública de Polymarket; solo se deja como override por si quieres apuntar a otro host compatible.
 
 ## Desarrollo local
@@ -46,10 +49,12 @@ app/
   clasificacion/page.tsx
   resultados/page.tsx
   mi-club/page.tsx
+  admin/page.tsx
   versus/page.tsx
   probabilidades/page.tsx
   mundial-2026/page.tsx
   api/results/fixtures/route.ts
+  api/admin-results/route.ts
   api/probabilities/route.ts
   api/worldcup-probabilities/route.ts
 components/
@@ -58,7 +63,11 @@ components/
   theme-provider.tsx
   theme-toggle.tsx
   ui.tsx
+  worldcup/match-card.tsx
 lib/
+  admin-results.ts
+  scoring.ts
+  use-scored-participants.ts
   data.ts
   flags.ts
   probabilities/polymarket.ts
@@ -70,6 +79,8 @@ lib/
 public/
   Logo_Porra_Mundial_2026.webp
   flags/*.png
+docs/
+  api-football-world-cup-2026.md
 ```
 
 ## Notas
