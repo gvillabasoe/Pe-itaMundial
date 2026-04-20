@@ -1,44 +1,55 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Eye, EyeOff, LockKeyhole, Shield } from "lucide-react";
+
+function getErrorMessage(value: string | null) {
+  if (!value) return "";
+  return value.trim() || "No se ha podido iniciar sesión";
+}
 
 export default function AdminLoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [clientError, setClientError] = useState("");
+  const [serverError, setServerError] = useState("");
+  const [showServerError, setShowServerError] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async () => {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setServerError(getErrorMessage(params.get("error")));
+    setShowServerError(true);
+  }, []);
+
+  const error = clientError || (showServerError ? serverError : "");
+
+  const handleChangeUsername = (value: string) => {
+    setUsername(value);
+    setClientError("");
+    setShowServerError(false);
+    setSubmitting(false);
+  };
+
+  const handleChangePassword = (value: string) => {
+    setPassword(value);
+    setClientError("");
+    setShowServerError(false);
+    setSubmitting(false);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     if (!username.trim() || !password) {
-      setError("Completa los campos");
+      event.preventDefault();
+      setSubmitting(false);
+      setClientError("Completa los campos");
       return;
     }
 
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || "Credenciales incorrectas");
-      }
-
-      window.location.replace("/admin");
-    } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "No se ha podido iniciar sesión");
-      setLoading(false);
-    }
+    setClientError("");
+    setShowServerError(false);
+    setSubmitting(true);
   };
 
   return (
@@ -51,7 +62,9 @@ export default function AdminLoginPage() {
           </h1>
         </div>
 
-        <div className="admin-login-card">
+        <form className="admin-login-card" action="/api/admin/login" method="post" onSubmit={handleSubmit}>
+          <input type="hidden" name="redirectTo" value="/admin" />
+
           <div className="admin-login-icon">
             <Shield size={24} />
           </div>
@@ -61,10 +74,11 @@ export default function AdminLoginPage() {
               <span className="admin-field-label">Usuario</span>
               <input
                 className="input-field"
+                name="username"
                 autoComplete="username"
                 placeholder="@canallita"
                 value={username}
-                onChange={(event) => setUsername(event.target.value)}
+                onChange={(event) => handleChangeUsername(event.target.value)}
               />
             </label>
 
@@ -73,16 +87,12 @@ export default function AdminLoginPage() {
               <div className="relative">
                 <input
                   className="input-field !pr-11"
+                  name="password"
                   autoComplete="current-password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      void handleSubmit();
-                    }
-                  }}
+                  onChange={(event) => handleChangePassword(event.target.value)}
                 />
                 <button
                   type="button"
@@ -98,11 +108,11 @@ export default function AdminLoginPage() {
 
           {error ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
 
-          <button type="button" className="btn btn-primary mt-5 w-full !py-3.5" onClick={() => void handleSubmit()} disabled={loading}>
+          <button type="submit" className="btn btn-primary mt-5 w-full !py-3.5" disabled={submitting}>
             <LockKeyhole size={16} />
-            {loading ? "Entrando..." : "Entrar"}
+            {submitting ? "Entrando..." : "Entrar"}
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
