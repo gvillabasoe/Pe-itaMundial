@@ -8,7 +8,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const isLoginRoute = pathname === "/admin/login";
+  const isLoginRoute = pathname === "/admin/login" || pathname === "/admin/login/";
   const hasSession = request.cookies.get(ADMIN_COOKIE_NAME)?.value === "1";
 
   if (!hasSession && !isLoginRoute) {
