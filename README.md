@@ -23,6 +23,7 @@ Versión Vercel-ready de la porra del Mundial 2026, ya fusionada con la app prem
 ## Variables de entorno
 
 ```bash
+DATABASE_URL=
 API_SPORTS_KEY=
 API_FOOTBALL_KEY=
 POLYMARKET_GAMMA_BASE=https://gamma-api.polymarket.com
@@ -30,6 +31,7 @@ POLYMARKET_GAMMA_BASE=https://gamma-api.polymarket.com
 
 Notas:
 
+- `DATABASE_URL` activa la persistencia real en Neon / Postgres para `user_teams` y `admin_results`.
 - `API_SPORTS_KEY` o `API_FOOTBALL_KEY` habilitan las llamadas server-side a API-FOOTBALL para el Mundial 2026.
 - Si la API no responde o no hay clave configurada, la app mantiene el calendario base del Mundial y puede seguir mostrando los resultados oficiales cargados manualmente desde Admin.
 - `POLYMARKET_GAMMA_BASE` es opcional. La lectura de mercados se hace contra la Gamma API pública de Polymarket; solo se deja como override por si quieres apuntar a otro host compatible.

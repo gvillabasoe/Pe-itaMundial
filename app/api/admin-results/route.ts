@@ -1,45 +1,11 @@
-import path from "path";
-import { promises as fs } from "fs";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { createDefaultAdminResults, sanitizeAdminResults, type AdminResults } from "@/lib/admin-results";
+import { getAdminResultsFromDb, saveAdminResultsToDb } from "@/lib/server/admin-results-db";
 import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const STORAGE_PATH = path.join(process.cwd(), "data", "admin-results.json");
-let memoryCache: AdminResults | null = null;
-
-async function readStoredAdminResults() {
-  if (memoryCache) {
-    return sanitizeAdminResults(memoryCache);
-  }
-
-  try {
-    const raw = await fs.readFile(STORAGE_PATH, "utf8");
-    const parsed = JSON.parse(raw) as AdminResults;
-    const sanitized = sanitizeAdminResults(parsed);
-    memoryCache = sanitized;
-    return sanitized;
-  } catch {
-    const fallback = createDefaultAdminResults();
-    memoryCache = fallback;
-    return fallback;
-  }
-}
-
-async function writeStoredAdminResults(data: AdminResults) {
-  memoryCache = data;
-
-  try {
-    await fs.mkdir(path.dirname(STORAGE_PATH), { recursive: true });
-    await fs.writeFile(STORAGE_PATH, JSON.stringify(data, null, 2), "utf8");
-  } catch {
-    return;
-  }
-}
 
 function responseHeaders() {
   return {
@@ -48,8 +14,15 @@ function responseHeaders() {
 }
 
 export async function GET() {
-  const adminResults = await readStoredAdminResults();
-  return NextResponse.json(adminResults, { headers: responseHeaders() });
+  try {
+    const adminResults = await getAdminResultsFromDb();
+    return NextResponse.json(adminResults, { headers: responseHeaders() });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "No se han podido leer los resultados." },
+      { status: 500, headers: responseHeaders() }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -62,13 +35,12 @@ export async function POST(request: Request) {
 
   try {
     const payload = await request.json();
-    const nextResults = sanitizeAdminResults(payload);
-    nextResults.savedAt = new Date().toISOString();
-
-    await writeStoredAdminResults(nextResults);
-
+    const nextResults = await saveAdminResultsToDb(payload);
     return NextResponse.json(nextResults, { headers: responseHeaders() });
-  } catch {
-    return NextResponse.json({ error: "No se han podido guardar los cambios" }, { status: 400, headers: responseHeaders() });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "No se han podido guardar los cambios" },
+      { status: 400, headers: responseHeaders() }
+    );
   }
 }
