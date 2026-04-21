@@ -29,6 +29,7 @@ export interface Team {
   username: string;
   championPick: string;
   runnerUpPick: string;
+  thirdPlacePick: string;
   totalPoints: number;
   groupPoints: number;
   finalPhasePoints: number;
@@ -39,6 +40,12 @@ export interface Team {
   knockoutPicks: Record<string, KnockoutPick[]>;
   groupOrderPicks: Record<string, string[]>;
   specials: SpecialPicks;
+  roundOf32Teams?: string[];
+  bestThirdGroups?: string[];
+  bestThirdAssignments?: Record<string, string>;
+  createdAt?: string;
+  locked?: boolean;
+  source?: "demo" | "user";
 }
 
 export interface SpecialPicks {
@@ -296,15 +303,17 @@ function generateParticipants(): Team[] {
 
       const ch = pick(champions);
       const ru = pick(champions.filter(c => c !== ch));
+      const th = pick(champions.filter(c => c !== ch && c !== ru));
       const gp = Math.floor(rand() * 25);
       const fp = Math.floor(rand() * 40);
       const sp = Math.floor(rand() * 30);
 
       teams.push({
         id: `t${id}`, name: teamName, userId: u.id, username: u.username,
-        championPick: ch, runnerUpPick: ru,
+        championPick: ch, runnerUpPick: ru, thirdPlacePick: th,
         totalPoints: gp + fp + sp, groupPoints: gp, finalPhasePoints: fp, specialPoints: sp,
         currentRank: 0, matchPicks, doubleMatches, knockoutPicks, groupOrderPicks,
+        source: "demo",
         specials: {
           mejorJugador: pick(players), mejorJoven: pick(young), maxGoleador: pick(goalers),
           maxAsistente: pick(assists), mejorPortero: pick(gks), maxGoleadorEsp: pick(espG),

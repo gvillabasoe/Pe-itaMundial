@@ -44,6 +44,13 @@ function cloneTeam(team: Team): Team {
       Object.entries(team.groupOrderPicks || {}).map(([key, value]) => [key, [...value]])
     ),
     specials: { ...team.specials },
+    thirdPlacePick: team.thirdPlacePick,
+    roundOf32Teams: team.roundOf32Teams ? [...team.roundOf32Teams] : undefined,
+    bestThirdGroups: team.bestThirdGroups ? [...team.bestThirdGroups] : undefined,
+    bestThirdAssignments: team.bestThirdAssignments ? { ...team.bestThirdAssignments } : undefined,
+    createdAt: team.createdAt,
+    locked: team.locked,
+    source: team.source,
   };
 }
 
@@ -193,6 +200,10 @@ function scorePodium(team: Team, adminResults: AdminResults) {
     points += SCORING.posicionesFinales.subcampeon;
   }
 
+  if (adminResults.podium.tercero && team.thirdPlacePick === adminResults.podium.tercero) {
+    points += SCORING.posicionesFinales.tercero;
+  }
+
   return points;
 }
 
@@ -247,11 +258,28 @@ function scoreSpecials(team: Team, adminResults: AdminResults) {
 }
 
 export function scoreParticipants(participants: Team[], adminResults: AdminResults) {
+  const baseTeams = participants.map((participant) => cloneTeam(participant));
+
   if (!adminResults.configured) {
-    return participants.map((participant) => cloneTeam(participant));
+    baseTeams.sort((a, b) => {
+      if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      if (b.finalPhasePoints !== a.finalPhasePoints) return b.finalPhasePoints - a.finalPhasePoints;
+      if (b.groupPoints !== a.groupPoints) return b.groupPoints - a.groupPoints;
+      return a.name.localeCompare(b.name, "es");
+    });
+
+    let currentRank = 1;
+    baseTeams.forEach((team, index) => {
+      if (index > 0 && team.totalPoints < baseTeams[index - 1].totalPoints) {
+        currentRank = index + 1;
+      }
+      team.currentRank = currentRank;
+    });
+
+    return baseTeams;
   }
 
-  const scored = participants.map((participant) => {
+  const scored = baseTeams.map((participant) => {
     const nextTeam = cloneTeam(participant);
     const matchScores = scoreGroupMatchPicks(nextTeam, adminResults);
     const groupPositionPoints = scoreGroupPositions(nextTeam, adminResults);

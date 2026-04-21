@@ -9,6 +9,7 @@ export type GroupPositionValue = 0 | 1 | 2 | 3 | 4;
 export interface AdminPodiumResults {
   campeon: string;
   subcampeon: string;
+  tercero: string;
 }
 
 export interface AdminSpecialResults {
@@ -155,6 +156,7 @@ export function createDefaultAdminResults(): AdminResults {
     podium: {
       campeon: "",
       subcampeon: "",
+      tercero: "",
     },
     specialResults: {
       mejorJugador: "",
@@ -179,7 +181,7 @@ export function hasConfiguredAdminResults(data: AdminResults) {
   const hasMatchResults = Object.values(data.matchResults).some((value) => isConfiguredMatchResult(value));
   const hasGroups = Object.values(data.groupPositions).some((value) => value > 0);
   const hasRounds = Object.values(data.knockoutRounds).some((round) => round.some(Boolean));
-  const hasPodium = Boolean(data.podium.campeon || data.podium.subcampeon);
+  const hasPodium = Boolean(data.podium.campeon || data.podium.subcampeon || data.podium.tercero);
   const hasSpecials = Object.entries(data.specialResults).some(([key, value]) => key === "minutoPrimerGol" ? value != null : Boolean(value));
   return hasMatchResults || hasGroups || hasRounds || hasPodium || hasSpecials;
 }
@@ -203,10 +205,14 @@ export function sanitizeAdminResults(input: Partial<AdminResults> | null | undef
   next.podium = {
     campeon: cleanTeam(current.podium?.campeon),
     subcampeon: cleanTeam(current.podium?.subcampeon),
+    tercero: cleanTeam(current.podium?.tercero),
   };
 
   if (next.podium.campeon && next.podium.campeon === next.podium.subcampeon) {
     next.podium.subcampeon = "";
+  }
+  if (next.podium.tercero && (next.podium.tercero === next.podium.campeon || next.podium.tercero === next.podium.subcampeon)) {
+    next.podium.tercero = "";
   }
 
   next.specialResults = {
