@@ -303,17 +303,23 @@ export default function AdminPage() {
     });
   };
 
-  const handlePodiumChange = (field: "campeon" | "subcampeon", value: string) => {
+  const handlePodiumChange = (field: "campeon" | "subcampeon" | "tercero", value: string) => {
     touchForm();
     setForm((current) => {
-      const otherField = field === "campeon" ? "subcampeon" : "campeon";
+      const nextPodium = {
+        ...current.podium,
+        [field]: value,
+      };
+
+      (["campeon", "subcampeon", "tercero"] as const).forEach((key) => {
+        if (key !== field && value && nextPodium[key] === value) {
+          nextPodium[key] = "";
+        }
+      });
+
       return {
         ...current,
-        podium: {
-          ...current.podium,
-          [field]: value,
-          [otherField]: value && current.podium[otherField] === value ? "" : current.podium[otherField],
-        },
+        podium: nextPodium,
       };
     });
   };
@@ -623,7 +629,7 @@ export default function AdminPage() {
 
         <section className="mb-5 animate-fade-in" style={{ animationDelay: "0.12s" }}>
           <SectionTitle accent="#D9B449" icon={Trophy}>Final</SectionTitle>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
             <label className="card admin-field-block">
               <span className="admin-field-label">Campeón</span>
               <select className="input-field admin-select" value={form.podium.campeon} onChange={(event) => handlePodiumChange("campeon", event.target.value)}>
@@ -642,6 +648,18 @@ export default function AdminPage() {
                 <option value="">Seleccionar</option>
                 {ALL_TEAMS_SORTED.map((team) => (
                   <option key={`subcampeon-${team}`} value={team}>
+                    {team}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="card admin-field-block">
+              <span className="admin-field-label">Tercer puesto</span>
+              <select className="input-field admin-select" value={form.podium.tercero} onChange={(event) => handlePodiumChange("tercero", event.target.value)}>
+                <option value="">Seleccionar</option>
+                {ALL_TEAMS_SORTED.map((team) => (
+                  <option key={`tercero-${team}`} value={team}>
                     {team}
                   </option>
                 ))}

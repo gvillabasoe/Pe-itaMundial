@@ -39,7 +39,7 @@ const QUICK_LINKS = [
 ] as const;
 
 export default function HomePage() {
-  const { participants } = useScoredParticipants();
+  const { participants, hasRealParticipants } = useScoredParticipants();
   const top3 = participants.slice(0, 3);
   const medalColors = ["#D4AF37", "#C0C0C0", "#CD7F32"];
   const medalBg = ["rgba(212,175,55,0.09)", "rgba(192,192,192,0.07)", "rgba(205,127,50,0.08)"];
@@ -148,17 +148,19 @@ export default function HomePage() {
         </Link>
       </section>
 
-      <section className="mb-6 animate-fade-in" style={{ animationDelay: "0.12s" }}>
-        <SectionTitle icon={Activity} accent="#98A3B8">Actividad</SectionTitle>
-        <div className="card !p-3.5">
-          {ACTIVITY.map((item, index) => (
-            <div key={index} className="activity-row">
-              <p className="pr-3 text-xs leading-5 text-text-muted">{item.text}</p>
-              <span className="shrink-0 whitespace-nowrap text-[10px] font-medium text-text-muted/70">{item.time}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      {!hasRealParticipants ? (
+        <section className="mb-6 animate-fade-in" style={{ animationDelay: "0.12s" }}>
+          <SectionTitle icon={Activity} accent="#98A3B8">Actividad</SectionTitle>
+          <div className="card !p-3.5">
+            {ACTIVITY.map((item, index) => (
+              <div key={index} className="activity-row">
+                <p className="pr-3 text-xs leading-5 text-text-muted">{item.text}</p>
+                <span className="shrink-0 whitespace-nowrap text-[10px] font-medium text-text-muted/70">{item.time}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mb-6 animate-fade-in" style={{ animationDelay: "0.18s" }}>
         <SectionTitle icon={BookOpen} accent="#D9B449">Sistema de puntuación</SectionTitle>

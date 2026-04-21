@@ -1,17 +1,118 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Eye, EyeOff, LogOut, Shield, Star, User } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, Eye, EyeOff, LogOut, Plus, Shield, Star, User } from "lucide-react";
+import { MiPorraBuilder } from "@/components/mi-porra-builder";
 import { CountryWithFlag, EmptyState, Flag, GroupBadge } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
 import { FIXTURES, GROUPS, GROUP_COLORS, KNOCKOUT_ROUND_DEFS, type Team } from "@/lib/data";
+import type { AdminResults } from "@/lib/admin-results";
+import { buildTeamCsv, buildTeamCsvFilename } from "@/lib/export-team-csv";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
 export default function MiClubPage() {
-  const { user, login, logout } = useAuth();
-  if (!user) return <LoginView onLogin={login} />;
-  return <PrivateZone user={user} onLogout={logout} />;
+  const { user, login, logout, favorites, toggleFavorite } = useAuth();
+
+  if (!user) {
+    return <LoginView onLogin={login} />;
+  }
+
+  return (
+    <AuthenticatedMiClub
+      user={user}
+      onLogout={logout}
+      favorites={favorites}
+      toggleFavorite={toggleFavorite}
+    />
+  );
+}
+
+function AuthenticatedMiClub({
+  user,
+  onLogout,
+  favorites,
+  toggleFavorite,
+}: {
+  user: { id: string; username: string };
+  onLogout: () => void;
+  favorites: string[];
+  toggleFavorite: (teamId: string) => void;
+}) {
+  const { adminResults, participants, isLoading } = useScoredParticipants();
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+
+  const userTeams = useMemo(() => participants.filter((participant) => participant.userId === user.id), [participants, user.id]);
+  const canCreateMore = userTeams.length < 3;
+  const activeTeam = userTeams.find((participant) => participant.id === selectedTeamId) || userTeams[0] || null;
+
+  useEffect(() => {
+    if (!userTeams.length) {
+      setSelectedTeamId(null);
+      return;
+    }
+
+    if (!selectedTeamId || !userTeams.some((participant) => participant.id === selectedTeamId)) {
+      setSelectedTeamId(userTeams[0].id);
+    }
+  }, [selectedTeamId, userTeams]);
+
+  useEffect(() => {
+    if (!canCreateMore && creatingNew) {
+      setCreatingNew(false);
+    }
+  }, [canCreateMore, creatingNew]);
+
+  const handleSaved = (teamId: string) => {
+    setSelectedTeamId(teamId);
+    setCreatingNew(false);
+  };
+
+  if (isLoading && !userTeams.length && !creatingNew) {
+    return <LoadingState />;
+  }
+
+  if (!userTeams.length || (creatingNew && canCreateMore)) {
+    return (
+      <MiPorraBuilder
+        user={user}
+        onSaved={handleSaved}
+        onCancel={userTeams.length > 0 ? () => setCreatingNew(false) : undefined}
+      />
+    );
+  }
+
+  return (
+    <PrivateZone
+      user={user}
+      onLogout={onLogout}
+      favorites={favorites}
+      toggleFavorite={toggleFavorite}
+      participants={participants}
+      adminResults={adminResults}
+      userTeams={userTeams}
+      activeTeam={activeTeam}
+      activeTeamId={selectedTeamId}
+      onSelectTeam={setSelectedTeamId}
+      onCreateNew={canCreateMore ? () => setCreatingNew(true) : undefined}
+      canCreateMore={canCreateMore}
+    />
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="flex min-h-[72vh] items-center justify-center px-4">
+      <div className="card w-full max-w-[360px] text-center !py-8 animate-fade-in">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[16px] border border-gold/15 bg-gold/10 text-gold-light">
+          <User size={22} />
+        </div>
+        <p className="font-display text-lg font-bold text-text-warm">Cargando Mi Club</p>
+        <p className="mt-2 text-sm text-text-muted">Recuperando tus porras guardadas…</p>
+      </div>
+    </div>
+  );
 }
 
 function LoginView({ onLogin }: { onLogin: (username: string, password: string) => boolean }) {
@@ -45,6 +146,7 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
           <Shield size={28} className="text-gold" />
         </div>
         <h2 className="font-display text-[22px] font-extrabold text-text-warm">Mi Club</h2>
+        <p className="mt-2 text-xs text-text-muted">Entra para crear tu porra, verla en modo lectura y exportarla a CSV.</p>
         <div className="mb-3 mt-6 text-left">
           <label className="mb-1 block text-[11px] text-text-muted">@usuario</label>
           <input className="input-field" placeholder="@usuario" value={username} onChange={(event) => setUsername(event.target.value)} />
@@ -59,104 +161,169 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-            <button onClick={() => setShowPass(!showPass)} className="absolute right-2.5 top-1/2 -translate-y-1/2 border-none bg-transparent text-text-muted">
+            <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2.5 top-1/2 -translate-y-1/2 border-none bg-transparent text-text-muted">
               {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
         </div>
         {error ? <p className="mb-3 text-xs text-danger">{error}</p> : null}
-        <button className="btn btn-primary w-full !py-3.5" onClick={handle} disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
+        <button className="btn btn-primary w-full !py-3.5" onClick={handle} disabled={loading}>
+          {loading ? "Entrando..." : "Entrar"}
+        </button>
+        <Link href="/admin/login" className="btn btn-ghost mt-2 w-full !py-3 text-sm no-underline">
+          <Shield size={14} /> Acceso Admin
+        </Link>
       </div>
     </div>
   );
 }
 
-function PrivateZone({ user, onLogout }: { user: { id: string; username: string }; onLogout: () => void }) {
-  const { favorites, toggleFavorite } = useAuth();
-  const { participants } = useScoredParticipants();
+function PrivateZone({
+  user,
+  onLogout,
+  favorites,
+  toggleFavorite,
+  participants,
+  adminResults,
+  userTeams,
+  activeTeam,
+  activeTeamId,
+  onSelectTeam,
+  onCreateNew,
+  canCreateMore,
+}: {
+  user: { id: string; username: string };
+  onLogout: () => void;
+  favorites: string[];
+  toggleFavorite: (teamId: string) => void;
+  participants: Team[];
+  adminResults: AdminResults;
+  userTeams: Team[];
+  activeTeam: Team | null;
+  activeTeamId: string | null;
+  onSelectTeam: (teamId: string) => void;
+  onCreateNew?: () => void;
+  canCreateMore: boolean;
+}) {
   const [activeTab, setActiveTab] = useState("resumen");
-  const [activeTeamIdx, setActiveTeamIdx] = useState(0);
-  const userTeams = participants.filter((participant) => participant.userId === user.id);
-  const team = userTeams[activeTeamIdx] || userTeams[0];
   const tabs = ["Resumen", "Partidos", "Grupos", "Eliminatorias", "Especiales", "Favoritos"];
 
+  const exportCsv = () => {
+    if (!activeTeam) return;
+    const csv = buildTeamCsv(activeTeam, adminResults);
+    const filename = buildTeamCsvFilename(activeTeam);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  if (!activeTeam) {
+    return (
+      <div className="mx-auto max-w-[640px] px-4 pt-4">
+        <EmptyState text="Todavía no tienes ninguna porra guardada." />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-[640px] px-4 pt-4">
-      <div className="mb-4 flex items-center justify-between animate-fade-in">
-        <h1 className="font-display text-2xl font-extrabold text-text-warm">Mi Club</h1>
-        <div className="flex items-center gap-2">
-          <Link href="/admin" className="btn btn-ghost !px-3.5 !py-2 text-xs">
-            <Shield size={14} /> Admin
-          </Link>
-          <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}><LogOut size={14} /> Cerrar sesión</button>
+    <div className="mx-auto max-w-[720px] px-4 pt-4">
+      <div className="mb-4 flex items-center justify-between gap-3 animate-fade-in">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold text-text-warm">Mi Club</h1>
+          <p className="mt-1 text-xs text-text-muted">Tus porras entregadas quedan en modo solo lectura.</p>
         </div>
+        <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}>
+          <LogOut size={14} /> Cerrar sesión
+        </button>
       </div>
 
-      <div className="card mb-3 flex items-center gap-3 animate-fade-in">
+      <div className="card mb-3 flex flex-wrap items-center gap-3 animate-fade-in">
         <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-participante/10">
           <User size={20} className="text-accent-participante" />
         </div>
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <p className="text-[10px] text-text-muted">Usuario</p>
           <p className="text-sm font-semibold">@{user.username}</p>
         </div>
-        <span className="badge badge-green text-[10px]">Activo</span>
+        <span className="badge badge-green text-[10px]">{userTeams.length}/3 porras</span>
+        {onCreateNew ? (
+          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onCreateNew}>
+            <Plus size={14} /> Crear nueva porra
+          </button>
+        ) : canCreateMore ? null : (
+          <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
+        )}
       </div>
 
       {userTeams.length > 1 ? (
         <div className="mb-3 flex gap-1.5 overflow-x-auto">
-          {userTeams.map((item, index) => (
-            <button key={item.id} className={`pill ${activeTeamIdx === index ? "active" : ""}`} onClick={() => setActiveTeamIdx(index)}>{item.name}</button>
+          {userTeams.map((team) => (
+            <button
+              key={team.id}
+              className={`pill ${activeTeamId === team.id ? "active" : ""}`}
+              onClick={() => onSelectTeam(team.id)}
+            >
+              {team.name}
+            </button>
           ))}
         </div>
       ) : null}
 
-      {team ? (
-        <>
-          <div className="card card-glow mb-2 bg-gradient-to-br from-bg-4 to-bg-2 text-center !border-gold/10 !py-5 animate-fade-in">
-            <div className="mb-2 flex items-center justify-center gap-1">
-              <Flag country={team.championPick} size="sm" />
-              <span className="text-[11px] text-text-muted">Campeón: {team.championPick}</span>
-            </div>
-            <p className="font-display text-[40px] font-black text-gold-light">{team.totalPoints}</p>
-            <span className="badge badge-gold mt-1">#{team.currentRank} de {participants.length}</span>
-          </div>
+      <div className="card card-glow mb-2 bg-gradient-to-br from-bg-4 to-bg-2 text-center !border-gold/10 !py-5 animate-fade-in">
+        <div className="mb-2 flex flex-wrap items-center justify-center gap-2 text-[11px] text-text-muted">
+          <span className="inline-flex items-center gap-1"><Flag country={activeTeam.championPick} size="sm" />Campeón: {activeTeam.championPick || "—"}</span>
+          <span className="inline-flex items-center gap-1"><Flag country={activeTeam.runnerUpPick} size="sm" />Subcampeón: {activeTeam.runnerUpPick || "—"}</span>
+          <span className="inline-flex items-center gap-1"><Flag country={activeTeam.thirdPlacePick} size="sm" />3.º: {activeTeam.thirdPlacePick || "—"}</span>
+        </div>
+        <p className="font-display text-[40px] font-black text-gold-light">{activeTeam.totalPoints}</p>
+        <span className="badge badge-gold mt-1">#{activeTeam.currentRank} de {participants.length}</span>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <span className="badge badge-muted text-[10px]">Solo lectura</span>
+          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={exportCsv}>
+            <Download size={14} /> Exportar CSV
+          </button>
+        </div>
+      </div>
 
-          <div className="mb-4 grid grid-cols-3 gap-1.5">
-            {[
-              { label: "Fase de grupos", value: team.groupPoints },
-              { label: "Fase final", value: team.finalPhasePoints },
-              { label: "Especiales", value: team.specialPoints },
-            ].map((item) => (
-              <div key={item.label} className="card text-center !p-2.5">
-                <p className="text-[9px] text-text-muted">{item.label}</p>
-                <p className="font-display text-lg font-bold">{item.value}</p>
-              </div>
-            ))}
+      <div className="mb-4 grid grid-cols-3 gap-1.5">
+        {[
+          { label: "Fase de grupos", value: activeTeam.groupPoints },
+          { label: "Fase final", value: activeTeam.finalPhasePoints },
+          { label: "Especiales", value: activeTeam.specialPoints },
+        ].map((item) => (
+          <div key={item.label} className="card text-center !p-2.5">
+            <p className="text-[9px] text-text-muted">{item.label}</p>
+            <p className="font-display text-lg font-bold">{item.value}</p>
           </div>
+        ))}
+      </div>
 
-          <div className="mb-3.5 flex gap-0.5 overflow-x-auto rounded-[10px] bg-bg-3 p-[3px]">
-            {tabs.map((tab) => (
-              <button
-                key={tab}
-                className={`whitespace-nowrap rounded-lg border-none px-3.5 py-2 text-xs font-medium transition-all ${activeTab === tab.toLowerCase() ? "bg-bg-5 text-text-primary" : "bg-transparent text-text-muted"}`}
-                onClick={() => setActiveTab(tab.toLowerCase())}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+      <div className="mb-3.5 flex gap-0.5 overflow-x-auto rounded-[10px] bg-bg-3 p-[3px]">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            className={`whitespace-nowrap rounded-lg border-none px-3.5 py-2 text-xs font-medium transition-all ${activeTab === tab.toLowerCase() ? "bg-bg-5 text-text-primary" : "bg-transparent text-text-muted"}`}
+            onClick={() => setActiveTab(tab.toLowerCase())}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-          <div className="animate-fade-in">
-            {activeTab === "resumen" ? <TabResumen team={team} /> : null}
-            {activeTab === "partidos" ? <TabPartidos team={team} /> : null}
-            {activeTab === "grupos" ? <TabGrupos team={team} /> : null}
-            {activeTab === "eliminatorias" ? <TabEliminatorias team={team} /> : null}
-            {activeTab === "especiales" ? <TabEspeciales team={team} /> : null}
-            {activeTab === "favoritos" ? <TabFavoritos favorites={favorites} toggleFavorite={toggleFavorite} participants={participants} /> : null}
-          </div>
-        </>
-      ) : null}
+      <div className="animate-fade-in">
+        {activeTab === "resumen" ? <TabResumen team={activeTeam} /> : null}
+        {activeTab === "partidos" ? <TabPartidos team={activeTeam} /> : null}
+        {activeTab === "grupos" ? <TabGrupos team={activeTeam} /> : null}
+        {activeTab === "eliminatorias" ? <TabEliminatorias team={activeTeam} /> : null}
+        {activeTab === "especiales" ? <TabEspeciales team={activeTeam} /> : null}
+        {activeTab === "favoritos" ? <TabFavoritos favorites={favorites} toggleFavorite={toggleFavorite} participants={participants} /> : null}
+      </div>
     </div>
   );
 }
@@ -210,14 +377,14 @@ function TabPartidos({ team }: { team: Team }) {
               <span className="text-[10px] text-text-muted">{fixture.round}</span>
               {isDouble ? <span className="badge badge-amber text-[8px] !px-1.5 !py-0">DOBLE</span> : null}
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1"><Flag country={fixture.homeTeam} size="sm" /><span className="text-[11px]">{fixture.homeTeam}</span></div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1"><Flag country={fixture.homeTeam} size="sm" /><span className="truncate text-[11px]">{fixture.homeTeam}</span></div>
               {pick ? (
                 <span className="rounded bg-bg-2 px-2 py-0.5 font-display text-sm font-bold text-text-muted">{pick.home} - {pick.away}</span>
               ) : (
                 <span className="text-[11px] text-text-muted">—</span>
               )}
-              <div className="flex items-center gap-1"><span className="text-[11px]">{fixture.awayTeam}</span><Flag country={fixture.awayTeam} size="sm" /></div>
+              <div className="flex min-w-0 items-center gap-1"><span className="truncate text-[11px]">{fixture.awayTeam}</span><Flag country={fixture.awayTeam} size="sm" /></div>
             </div>
             <div className="mt-1 text-center"><span className="badge badge-muted text-[9px]">Pendiente</span></div>
           </div>
@@ -262,7 +429,7 @@ function TabEliminatorias({ team }: { team: Team }) {
             <div className="flex flex-wrap gap-1">
               {picks.map((pick, index) => (
                 <div key={`${round.key}-${index}`} className="card flex items-center gap-1.5 !px-2.5 !py-1.5">
-                  <Flag country={pick.country} size="sm" /><span className="text-[11px]">{pick.country}</span>
+                  <Flag country={pick.country} size="sm" /><span className="text-[11px]">{pick.country || "Pendiente"}</span>
                   <span className={`badge text-[9px] ${pick.status === "correct" ? "badge-green" : pick.status === "wrong" ? "badge-red" : "badge-muted"}`}>
                     {pick.status === "correct" ? `${round.pts} pts` : pick.status === "wrong" ? "0 pts" : "Pendiente"}
                   </span>
@@ -274,11 +441,11 @@ function TabEliminatorias({ team }: { team: Team }) {
         );
       })}
       <div className="card bg-gold/[0.03] !border-gold/15 !p-4 text-center">
-        <p className="mb-2 text-[11px] font-semibold text-gold">Final</p>
-        <div className="flex items-center justify-center gap-3">
-          <div className="text-center"><Flag country={team.championPick} /><p className="mt-0.5 text-[11px]">{team.championPick}</p></div>
-          <span className="font-display text-base font-extrabold text-gold">vs</span>
-          <div className="text-center"><Flag country={team.runnerUpPick} /><p className="mt-0.5 text-[11px]">{team.runnerUpPick}</p></div>
+        <p className="mb-2 text-[11px] font-semibold text-gold">Podio final</p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="text-center"><Flag country={team.championPick} /><p className="mt-0.5 text-[11px]">Campeón</p><p className="text-[10px] text-text-muted">{team.championPick}</p></div>
+          <div className="text-center"><Flag country={team.runnerUpPick} /><p className="mt-0.5 text-[11px]">Subcampeón</p><p className="text-[10px] text-text-muted">{team.runnerUpPick}</p></div>
+          <div className="text-center"><Flag country={team.thirdPlacePick} /><p className="mt-0.5 text-[11px]">3.º puesto</p><p className="text-[10px] text-text-muted">{team.thirdPlacePick}</p></div>
         </div>
       </div>
     </div>
@@ -329,7 +496,7 @@ function TabFavoritos({ favorites, toggleFavorite, participants }: { favorites: 
             <p className="truncate text-sm font-semibold text-text-warm">{participant.name}</p>
             <p className="text-[11px] text-text-muted">@{participant.username} · {participant.totalPoints} pts</p>
           </div>
-          <button onClick={() => toggleFavorite(participant.id)} className="cursor-pointer border-none bg-transparent p-1">
+          <button type="button" onClick={() => toggleFavorite(participant.id)} className="cursor-pointer border-none bg-transparent p-1">
             <Star size={14} fill="#D4AF37" color="#D4AF37" />
           </button>
         </div>
