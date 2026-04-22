@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Eye, EyeOff, LogOut, Plus, Shield, Star, User } from "lucide-react";
 import { MiPorraBuilder } from "@/components/mi-porra-builder";
 import { CountryWithFlag, EmptyState, Flag, GroupBadge } from "@/components/ui";
@@ -43,13 +43,31 @@ function AuthenticatedMiClub({
   const [creatingNew, setCreatingNew] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
-  const userTeams = useMemo(() => participants.filter((participant) => participant.userId === user.id), [participants, user.id]);
+  // FIX: track whether the very first load has ever completed.
+  // After that, never show <LoadingState /> again — background SWR revalidations
+  // (triggered by revalidateOnFocus) must not flip back to the loading spinner.
+  // Without this guard, the component alternates between <LoadingState /> and
+  // <MiPorraBuilder /> on every focus event, causing the visible refresh loop.
+  const initialLoadDone = useRef(false);
+  useEffect(() => {
+    if (!isLoading) {
+      initialLoadDone.current = true;
+    }
+  }, [isLoading]);
+
+  const userTeams = useMemo(
+    () => participants.filter((participant) => participant.userId === user.id),
+    [participants, user.id],
+  );
   const canCreateMore = userTeams.length < 3;
   const activeTeam = userTeams.find((participant) => participant.id === selectedTeamId) || userTeams[0] || null;
 
+  // FIX: guard setSelectedTeamId(null) to only fire when the value actually
+  // changes. Without this, each render creates a new `userTeams` array reference
+  // (even if empty), causing the effect to re-run and call setState on every cycle.
   useEffect(() => {
     if (!userTeams.length) {
-      setSelectedTeamId(null);
+      if (selectedTeamId !== null) setSelectedTeamId(null);
       return;
     }
 
@@ -69,7 +87,9 @@ function AuthenticatedMiClub({
     setCreatingNew(false);
   };
 
-  if (isLoading && !userTeams.length && !creatingNew) {
+  // Only show the full-screen spinner on the very first load.
+  // Background revalidations must be silent — no layout shift for the user.
+  if (!initialLoadDone.current && isLoading && !creatingNew) {
     return <LoadingState />;
   }
 
@@ -232,33 +252,24 @@ function PrivateZone({
   }
 
   return (
-    <div className="mx-auto max-w-[720px] px-4 pt-4">
-      <div className="mb-4 flex items-center justify-between gap-3 animate-fade-in">
+    <div className="mx-auto max-w-[640px] px-4 pt-4">
+      <div className="mb-4 flex items-center justify-between animate-fade-in">
         <div>
           <h1 className="font-display text-2xl font-extrabold text-text-warm">Mi Club</h1>
-          <p className="mt-1 text-xs text-text-muted">Tus porras entregadas quedan en modo solo lectura.</p>
+          <p className="text-[11px] text-text-muted">@{user.username}</p>
         </div>
-        <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}>
-          <LogOut size={14} /> Cerrar sesión
-        </button>
-      </div>
-
-      <div className="card mb-3 flex flex-wrap items-center gap-3 animate-fade-in">
-        <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-participante/10">
-          <User size={20} className="text-accent-participante" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] text-text-muted">Usuario</p>
-          <p className="text-sm font-semibold">@{user.username}</p>
-        </div>
-        <span className="badge badge-green text-[10px]">{userTeams.length}/3 porras</span>
-        {onCreateNew ? (
-          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onCreateNew}>
-            <Plus size={14} /> Crear nueva porra
+        <div className="flex items-center gap-2">
+          {onCreateNew ? (
+            <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onCreateNew}>
+              <Plus size={14} /> Crear nueva porra
+            </button>
+          ) : canCreateMore ? null : (
+            <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
+          )}
+          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onLogout}>
+            <LogOut size={14} /> Salir
           </button>
-        ) : canCreateMore ? null : (
-          <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
-        )}
+        </div>
       </div>
 
       {userTeams.length > 1 ? (
