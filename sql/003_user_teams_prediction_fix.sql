@@ -11,7 +11,7 @@ begin
       and table_name = 'user_teams'
       and column_name = 'entry'
   ) then
-    alter table user_teams add column entry jsonb;
+    execute 'alter table user_teams add column if not exists entry jsonb';
   end if;
 
   -- Si prediction es JSON legacy, úsala para rellenar entry cuando falte.
@@ -55,9 +55,9 @@ begin
       where prediction is null or btrim(prediction) = ''
     $sql$;
 
-    execute $$alter table user_teams alter column prediction set default '{}'$$;
+    execute $ddl$alter table user_teams alter column prediction set default '{}'$ddl$;
   else
-    execute $$alter table user_teams alter column prediction drop not null$$;
+    execute $ddl$alter table user_teams alter column prediction drop not null$ddl$;
   end if;
 end $$;
 

@@ -175,9 +175,9 @@ begin
       where prediction is null or btrim(prediction) = ''
     $sql$;
 
-    execute $$alter table user_teams alter column prediction set default '{}'$$;
+    execute $ddl$alter table user_teams alter column prediction set default '{}'$ddl$;
   else
-    execute $$alter table user_teams alter column prediction drop not null$$;
+    execute $ddl$alter table user_teams alter column prediction drop not null$ddl$;
   end if;
 end $$;
 
@@ -215,9 +215,11 @@ begin
     where conname = 'user_teams_source_check'
       and conrelid = 'user_teams'::regclass
   ) then
-    alter table user_teams
-      add constraint user_teams_source_check
-      check (source in ('user', 'demo'));
+    execute $ddl$
+      alter table user_teams
+        add constraint user_teams_source_check
+        check (source in ('user', 'demo'))
+    $ddl$;
   end if;
 end $$;
 
