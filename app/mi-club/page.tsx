@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Eye, EyeOff, LogOut, Plus, Shield, Star, User } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, Eye, EyeOff, LogOut, Plus, Shield, Star, Trash2, User } from "lucide-react";
 import { MiPorraBuilder } from "@/components/mi-porra-builder";
 import { CountryWithFlag, EmptyState, Flag, GroupBadge } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
@@ -39,35 +39,22 @@ function AuthenticatedMiClub({
   favorites: string[];
   toggleFavorite: (teamId: string) => void;
 }) {
-  const { adminResults, participants, isLoading } = useScoredParticipants();
+  const { adminResults, participants, isLoading, error, userTeamsStore, mutateUserTeams } = useScoredParticipants();
   const [creatingNew, setCreatingNew] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-
-  // FIX: track whether the very first load has ever completed.
-  // After that, never show <LoadingState /> again — background SWR revalidations
-  // (triggered by revalidateOnFocus) must not flip back to the loading spinner.
-  // Without this guard, the component alternates between <LoadingState /> and
-  // <MiPorraBuilder /> on every focus event, causing the visible refresh loop.
-  const initialLoadDone = useRef(false);
-  useEffect(() => {
-    if (!isLoading) {
-      initialLoadDone.current = true;
-    }
-  }, [isLoading]);
+  const [deletePendingId, setDeletePendingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
 
   const userTeams = useMemo(
-    () => participants.filter((participant) => participant.userId === user.id),
-    [participants, user.id],
+    () => participants.filter((participant) => participant.source === "user" && participant.userId === user.id),
+    [participants, user.id]
   );
   const canCreateMore = userTeams.length < 3;
   const activeTeam = userTeams.find((participant) => participant.id === selectedTeamId) || userTeams[0] || null;
 
-  // FIX: guard setSelectedTeamId(null) to only fire when the value actually
-  // changes. Without this, each render creates a new `userTeams` array reference
-  // (even if empty), causing the effect to re-run and call setState on every cycle.
   useEffect(() => {
     if (!userTeams.length) {
-      if (selectedTeamId !== null) setSelectedTeamId(null);
+      setSelectedTeamId(null);
       return;
     }
 
@@ -82,23 +69,71 @@ function AuthenticatedMiClub({
     }
   }, [canCreateMore, creatingNew]);
 
-  const handleSaved = (teamId: string) => {
-    setSelectedTeamId(teamId);
+  const handleSaved = async (teamId: string) => {
+    setActionError("");
+    const refreshedStore = await mutateUserTeams();
+    const refreshedEntries = refreshedStore?.entries ?? userTeamsStore.entries;
+    const savedTeam = refreshedEntries.find((entry) => entry.userId === user.id && entry.id === teamId);
+    setSelectedTeamId(savedTeam?.id ?? teamId);
     setCreatingNew(false);
   };
 
-  // Only show the full-screen spinner on the very first load.
-  // Background revalidations must be silent — no layout shift for the user.
-  if (!initialLoadDone.current && isLoading && !creatingNew) {
+  const handleDelete = async (team: Team) => {
+    if (deletePendingId) return;
+
+    const confirmed = window.confirm(`¿Seguro que quieres eliminar la porra \"${team.name}\"?`);
+    if (!confirmed) return;
+
+    setActionError("");
+    setDeletePendingId(team.id);
+
+    try {
+      const response = await fetch("/api/user-teams", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: team.id, userId: user.id }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || "No se ha podido eliminar la porra.");
+      }
+
+      const refreshedStore = await mutateUserTeams();
+      const refreshedEntries = refreshedStore?.entries ?? userTeamsStore.entries;
+      const remainingTeams = refreshedEntries.filter((entry) => entry.userId === user.id);
+      setSelectedTeamId(remainingTeams[0]?.id ?? null);
+      setCreatingNew(false);
+    } catch (deleteError) {
+      setActionError(deleteError instanceof Error ? deleteError.message : "No se ha podido eliminar la porra.");
+    } finally {
+      setDeletePendingId(null);
+    }
+  };
+
+  const loadErrorMessage = error instanceof Error ? error.message : "";
+
+  if (isLoading && !creatingNew && userTeams.length === 0) {
     return <LoadingState />;
   }
 
-  if (!userTeams.length || (creatingNew && canCreateMore)) {
+  if (creatingNew && canCreateMore) {
     return (
       <MiPorraBuilder
         user={user}
         onSaved={handleSaved}
-        onCancel={userTeams.length > 0 ? () => setCreatingNew(false) : undefined}
+        onCancel={() => setCreatingNew(false)}
+      />
+    );
+  }
+
+  if (!userTeams.length) {
+    return (
+      <EmptyMiClubState
+        user={user}
+        onLogout={onLogout}
+        onCreateNew={canCreateMore ? () => setCreatingNew(true) : undefined}
+        canCreateMore={canCreateMore}
+        errorMessage={actionError || loadErrorMessage}
       />
     );
   }
@@ -117,6 +152,9 @@ function AuthenticatedMiClub({
       onSelectTeam={setSelectedTeamId}
       onCreateNew={canCreateMore ? () => setCreatingNew(true) : undefined}
       canCreateMore={canCreateMore}
+      onDeleteActive={activeTeam ? () => handleDelete(activeTeam) : undefined}
+      deletePending={Boolean(activeTeam && deletePendingId === activeTeam.id)}
+      actionError={actionError}
     />
   );
 }
@@ -131,6 +169,97 @@ function LoadingState() {
         <p className="font-display text-lg font-bold text-text-warm">Cargando Mi Club</p>
         <p className="mt-2 text-sm text-text-muted">Recuperando tus porras guardadas…</p>
       </div>
+    </div>
+  );
+}
+
+function EmptyMiClubState({
+  user,
+  onLogout,
+  onCreateNew,
+  canCreateMore,
+  errorMessage,
+}: {
+  user: { id: string; username: string };
+  onLogout: () => void;
+  onCreateNew?: () => void;
+  canCreateMore: boolean;
+  errorMessage?: string;
+}) {
+  return (
+    <div className="mx-auto max-w-[720px] px-4 pt-4">
+      <div className="mb-4 flex items-center justify-between gap-3 animate-fade-in">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold text-text-warm">Mi Club</h1>
+          <p className="mt-1 text-xs text-text-muted">Cuando guardes una porra aparecerá aquí en modo solo lectura.</p>
+        </div>
+        <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}>
+          <LogOut size={14} /> Cerrar sesión
+        </button>
+      </div>
+
+      <div className="card mb-3 flex flex-wrap items-center gap-3 animate-fade-in">
+        <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-participante/10">
+          <User size={20} className="text-accent-participante" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] text-text-muted">Usuario</p>
+          <p className="text-sm font-semibold">@{user.username}</p>
+        </div>
+        <span className="badge badge-muted text-[10px]">0/3 porras</span>
+        {onCreateNew ? (
+          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onCreateNew}>
+            <Plus size={14} /> Crear porra
+          </button>
+        ) : canCreateMore ? null : (
+          <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
+        )}
+      </div>
+
+      <div className="card card-glow mb-4 bg-gradient-to-br from-bg-4 to-bg-2 !border-gold/10 !p-5 animate-fade-in">
+        <div className="flex items-start gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[18px] border border-gold/15 bg-gold/10 text-gold-light">
+            <User size={28} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Tarjeta de identificación</p>
+            <h2 className="mt-2 font-display text-[26px] font-extrabold text-text-warm">@{user.username}</h2>
+            <p className="mt-1 text-sm text-text-muted">Todavía no has creado ninguna porra. Aquí se mostrará tu ficha en cuanto guardes la primera.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="badge badge-muted text-[10px]">0/3 porras</span>
+              <span className="badge badge-gold text-[10px]">Pendiente de crear</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {[
+            { label: "Campeón", value: "—" },
+            { label: "Subcampeón", value: "—" },
+            { label: "3.º puesto", value: "—" },
+          ].map((item) => (
+            <div key={item.label} className="card text-center !p-3">
+              <p className="text-[9px] text-text-muted">{item.label}</p>
+              <p className="mt-1 font-display text-lg font-bold text-text-warm">{item.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <EmptyState
+        title="Tu club está vacío"
+        text="Crea tu primera porra para empezar. No volveremos a consultar tus porras hasta que guardes o elimines una de forma explícita."
+        icon={User}
+        action={
+          onCreateNew ? (
+            <button className="btn btn-primary !px-5 !py-3 text-sm" onClick={onCreateNew}>
+              <Plus size={16} /> Crear porra
+            </button>
+          ) : null
+        }
+      />
+
+      {errorMessage ? <p className="mt-3 text-center text-xs text-text-muted">{errorMessage}</p> : null}
     </div>
   );
 }
@@ -211,6 +340,9 @@ function PrivateZone({
   onSelectTeam,
   onCreateNew,
   canCreateMore,
+  onDeleteActive,
+  deletePending,
+  actionError,
 }: {
   user: { id: string; username: string };
   onLogout: () => void;
@@ -224,6 +356,9 @@ function PrivateZone({
   onSelectTeam: (teamId: string) => void;
   onCreateNew?: () => void;
   canCreateMore: boolean;
+  onDeleteActive?: () => void;
+  deletePending?: boolean;
+  actionError?: string;
 }) {
   const [activeTab, setActiveTab] = useState("resumen");
   const tabs = ["Resumen", "Partidos", "Grupos", "Eliminatorias", "Especiales", "Favoritos"];
@@ -252,24 +387,35 @@ function PrivateZone({
   }
 
   return (
-    <div className="mx-auto max-w-[640px] px-4 pt-4">
-      <div className="mb-4 flex items-center justify-between animate-fade-in">
+    <div className="mx-auto max-w-[720px] px-4 pt-4">
+      <div className="mb-4 flex items-center justify-between gap-3 animate-fade-in">
         <div>
           <h1 className="font-display text-2xl font-extrabold text-text-warm">Mi Club</h1>
-          <p className="text-[11px] text-text-muted">@{user.username}</p>
+          <p className="mt-1 text-xs text-text-muted">Tus porras entregadas quedan en modo solo lectura.</p>
         </div>
-        <div className="flex items-center gap-2">
-          {onCreateNew ? (
-            <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onCreateNew}>
-              <Plus size={14} /> Crear nueva porra
-            </button>
-          ) : canCreateMore ? null : (
-            <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
-          )}
-          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onLogout}>
-            <LogOut size={14} /> Salir
+        <button className="btn btn-ghost !px-3.5 !py-2 text-xs" onClick={onLogout}>
+          <LogOut size={14} /> Cerrar sesión
+        </button>
+      </div>
+
+      {actionError ? <p className="mb-3 text-center text-xs text-text-muted">{actionError}</p> : null}
+
+      <div className="card mb-3 flex flex-wrap items-center gap-3 animate-fade-in">
+        <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-participante/10">
+          <User size={20} className="text-accent-participante" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] text-text-muted">Usuario</p>
+          <p className="text-sm font-semibold">@{user.username}</p>
+        </div>
+        <span className="badge badge-green text-[10px]">{userTeams.length}/3 porras</span>
+        {onCreateNew ? (
+          <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={onCreateNew}>
+            <Plus size={14} /> Crear nueva porra
           </button>
-        </div>
+        ) : canCreateMore ? null : (
+          <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
+        )}
       </div>
 
       {userTeams.length > 1 ? (
@@ -296,6 +442,11 @@ function PrivateZone({
         <span className="badge badge-gold mt-1">#{activeTeam.currentRank} de {participants.length}</span>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
           <span className="badge badge-muted text-[10px]">Solo lectura</span>
+          {onDeleteActive ? (
+            <button className="btn btn-ghost !px-3 !py-2 text-xs text-danger" onClick={onDeleteActive} disabled={deletePending}>
+              <Trash2 size={14} /> {deletePending ? "Eliminando..." : "Eliminar porra"}
+            </button>
+          ) : null}
           <button className="btn btn-ghost !px-3 !py-2 text-xs" onClick={exportCsv}>
             <Download size={14} /> Exportar CSV
           </button>

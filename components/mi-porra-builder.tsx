@@ -20,7 +20,6 @@ import {
   validatePorraDraft,
   type PorraDraft,
 } from "@/lib/porra-builder";
-import { notifyUserTeamsUpdated } from "@/lib/use-scored-participants";
 
 const GROUP_SLOT_LABELS = ["1.º", "2.º", "3.º", "4.º"] as const;
 
@@ -35,7 +34,7 @@ export function MiPorraBuilder({
   onCancel,
 }: {
   user: BuilderUser;
-  onSaved: (teamId: string) => void;
+  onSaved: (teamId: string) => void | Promise<void>;
   onCancel?: () => void;
 }) {
   const [draft, setDraft] = useState<PorraDraft>(() => createEmptyPorraDraft(user.id, user.username));
@@ -194,8 +193,7 @@ export function MiPorraBuilder({
       if (!response.ok) {
         throw new Error(payload?.error || "No se ha podido guardar la porra.");
       }
-      notifyUserTeamsUpdated();
-      onSaved(entry.id);
+      await onSaved(entry.id);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "No se ha podido guardar la porra.");
     } finally {

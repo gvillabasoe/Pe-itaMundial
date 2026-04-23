@@ -41,14 +41,10 @@ export function notifyUserTeamsUpdated() {
 export function useUserTeamsStore() {
   const { data, error, isLoading, mutate } = useSWR<UserTeamsStore>("/api/user-teams", userTeamsFetcher, {
     fallbackData: createEmptyUserTeamsStore(),
-    revalidateOnFocus: true,
-    // Limit retries on error — prevents infinite loop when Neon has cold-start or
-    // transient connection issues. After 3 failures, stop until user explicitly retries.
-    onErrorRetry: (_error, _key, _config, revalidate, { retryCount }) => {
-      if (retryCount >= 3) return;
-      const delay = Math.min(5000 * (retryCount + 1), 30_000);
-      setTimeout(() => revalidate({ retryCount }), delay);
-    },
+    revalidateOnMount: true,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: false,
   });
 
   useEffect(() => {
