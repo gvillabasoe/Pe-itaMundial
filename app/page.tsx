@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Activity, BookOpen, ChevronRight, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
-import { Countdown, Flag, SectionTitle } from "@/components/ui";
+import { Countdown, MatchupWithFlags, SectionTitle } from "@/components/ui";
 import { ACTIVITY, SCORING } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
@@ -74,12 +74,14 @@ export default function HomePage() {
           </div>
 
           <div className="rounded-[22px] border border-gold/15 bg-[linear-gradient(135deg,rgba(212,175,55,0.1),rgba(255,255,255,0.03))] p-4 shadow-[0_18px_36px_rgba(var(--shadow-color)/0.18)]">
-            <div className="mb-3 flex items-center justify-center gap-2">
-              <Flag country="México" size="sm" />
-              <span className="text-sm font-semibold text-text-muted">vs</span>
-              <Flag country="Sudáfrica" size="sm" />
+            <div className="mb-3 flex items-center justify-center">
+              <MatchupWithFlags
+                homeCountry="México"
+                awayCountry="Sudáfrica"
+                size="md"
+                textClassName="font-display text-[16px] font-bold text-text-warm"
+              />
             </div>
-            <p className="text-center font-display text-[18px] font-bold text-text-warm">México vs Sudáfrica</p>
             <p className="mb-4 text-center text-[11px] font-medium text-gold">11 junio 2026 · 21:00 (Madrid)</p>
             <Countdown target="2026-06-11T19:00:00Z" />
           </div>

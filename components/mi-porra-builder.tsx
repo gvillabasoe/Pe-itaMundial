@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AlertCircle, ChevronLeft, Check, Save, Sparkles, Trophy, Users } from "lucide-react";
-import { Flag, GroupBadge, SectionTitle } from "@/components/ui";
+import { CountrySelectionPreview, Flag, GroupBadge, SectionTitle } from "@/components/ui";
 import { ADMIN_SPECIAL_FIELDS, ALL_TEAMS_SORTED } from "@/lib/admin-results";
 import { GROUPS } from "@/lib/data";
 import {
@@ -592,6 +592,7 @@ function SelectCard({ label, value, options, onChange }: { label: string; value:
           </option>
         ))}
       </select>
+      <CountrySelectionPreview country={value} emptyLabel="Sin selección" />
     </label>
   );
 }

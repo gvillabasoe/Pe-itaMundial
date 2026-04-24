@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, Clock3, LayoutGrid, ListFilter, LogOut, MapPin, Save, Shield, Sparkles, Trash2, Trophy, Users } from "lucide-react";
-import { Flag, GroupBadge, SectionTitle } from "@/components/ui";
+import { CountrySelectionPreview, Flag, GroupBadge, SectionTitle } from "@/components/ui";
 import { GROUPS } from "@/lib/data";
 import {
   ADMIN_SPECIAL_FIELDS,
@@ -619,6 +619,7 @@ export default function AdminPage() {
                           </option>
                         ))}
                       </select>
+                      <CountrySelectionPreview country={team} emptyLabel="Sin selección" />
                     </label>
                   ))}
                 </div>
@@ -640,6 +641,7 @@ export default function AdminPage() {
                   </option>
                 ))}
               </select>
+              <CountrySelectionPreview country={form.podium.campeon} emptyLabel="Sin selección" />
             </label>
 
             <label className="card admin-field-block">
@@ -652,6 +654,7 @@ export default function AdminPage() {
                   </option>
                 ))}
               </select>
+              <CountrySelectionPreview country={form.podium.subcampeon} emptyLabel="Sin selección" />
             </label>
 
             <label className="card admin-field-block">
@@ -664,6 +667,7 @@ export default function AdminPage() {
                   </option>
                 ))}
               </select>
+              <CountrySelectionPreview country={form.podium.tercero} emptyLabel="Sin selección" />
             </label>
           </div>
         </section>
@@ -679,18 +683,21 @@ export default function AdminPage() {
                 <label key={field.key} className="card admin-field-block">
                   <span className="admin-field-label">{field.label}</span>
                   {field.kind === "team" ? (
-                    <select
-                      className="input-field admin-select"
-                      value={String(value ?? "")}
-                      onChange={(event) => handleSpecialChange(key, event.target.value)}
-                    >
-                      <option value="">Seleccionar</option>
-                      {ALL_TEAMS_SORTED.map((team) => (
-                        <option key={`${field.key}-${team}`} value={team}>
-                          {team}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        className="input-field admin-select"
+                        value={String(value ?? "")}
+                        onChange={(event) => handleSpecialChange(key, event.target.value)}
+                      >
+                        <option value="">Seleccionar</option>
+                        {ALL_TEAMS_SORTED.map((team) => (
+                          <option key={`${field.key}-${team}`} value={team}>
+                            {team}
+                          </option>
+                        ))}
+                      </select>
+                      <CountrySelectionPreview country={String(value ?? "")} emptyLabel="Sin selección" />
+                    </>
                   ) : field.kind === "number" ? (
                     <input
                       className="input-field"

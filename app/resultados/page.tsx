@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import useSWR from "swr";
 import { AlertCircle, ChevronDown, ChevronUp, Clock3, Lock, MapPin, Search, Users, Wifi, WifiOff, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import { EmptyState, Flag, GroupBadge } from "@/components/ui";
+import { CountryWithFlag, EmptyState, Flag, GroupBadge, MatchupWithFlags } from "@/components/ui";
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 import { ALL_HOST_CITIES, getCityBgColor, getCityColor, getZoneForCity, REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
@@ -62,7 +62,9 @@ interface MatchPredictionRow {
   currentRank: number;
   totalPoints: number;
   predictionText: string | null;
+  predictionTeams?: string[];
   secondaryText?: string | null;
+  secondaryCountry?: string | null;
   isDouble: boolean;
   isMine: boolean;
   kind: PredictionKind;
@@ -370,7 +372,9 @@ function buildPredictionDataset(match: MatchView, currentUserId: string, partici
         currentRank: team.currentRank,
         totalPoints: team.totalPoints,
         predictionText: home && away ? `${home} vs ${away}` : null,
+        predictionTeams: home && away ? [home, away] : [],
         secondaryText: team.championPick ? `Campeón: ${team.championPick}` : null,
+        secondaryCountry: team.championPick || null,
         isDouble: false,
         isMine: team.userId === currentUserId,
         kind: "finalists" as const,
@@ -405,7 +409,9 @@ function buildPredictionDataset(match: MatchView, currentUserId: string, partici
       currentRank: team.currentRank,
       totalPoints: team.totalPoints,
       predictionText: winner ? `Pasa ${winner}` : null,
+      predictionTeams: winner ? [winner] : [],
       secondaryText: null,
+      secondaryCountry: null,
       isDouble: false,
       isMine: team.userId === currentUserId,
       kind: "winner" as const,
@@ -810,9 +816,14 @@ function MatchDetailModal({ match, userId, participants, onClose }: { match: Mat
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">Pronósticos del club</p>
-            <h3 className="mt-1 font-display text-[22px] font-extrabold text-text-warm">
-              {match.displayHomeTeam} <span className="text-text-muted">vs</span> {match.displayAwayTeam}
-            </h3>
+            <div className="mt-1">
+              <MatchupWithFlags
+                homeCountry={match.displayHomeTeam}
+                awayCountry={match.displayAwayTeam}
+                size="md"
+                textClassName="font-display text-[22px] font-extrabold text-text-warm"
+              />
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className={statusBadgeClass}>{statusText}</span>
               <span className="badge badge-muted text-[10px]">{roundLabel}</span>
@@ -906,10 +917,53 @@ function MatchDetailModal({ match, userId, participants, onClose }: { match: Mat
   );
 }
 
+function PredictionPillContent({ row }: { row: MatchPredictionRow }) {
+  if (!row.predictionText) {
+    return <span>Sin pronóstico</span>;
+  }
+
+  if (row.kind === "winner" && row.predictionTeams?.[0]) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <span>Pasa</span>
+        <CountryWithFlag country={row.predictionTeams[0]} size="sm" />
+      </span>
+    );
+  }
+
+  if (row.kind === "finalists" && row.predictionTeams?.length === 2) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <CountryWithFlag country={row.predictionTeams[0]} size="sm" />
+        <span className="text-text-muted">vs</span>
+        <CountryWithFlag country={row.predictionTeams[1]} size="sm" />
+      </span>
+    );
+  }
+
+  return <span>{row.predictionText}</span>;
+}
+
+function PredictionSecondaryContent({ row }: { row: MatchPredictionRow }) {
+  if (row.secondaryCountry) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[11px] leading-5 text-text-muted">
+        <span>Campeón:</span>
+        <CountryWithFlag country={row.secondaryCountry} size="sm" />
+      </span>
+    );
+  }
+
+  if (!row.secondaryText) {
+    return null;
+  }
+
+  return <span className="text-[11px] leading-5 text-text-muted">{row.secondaryText}</span>;
+}
+
 function PredictionRow({ row }: { row: MatchPredictionRow }) {
   const rankAccent = getRankAccent(row.currentRank);
   const predictionStyle = getPredictionPillStyle(row);
-  const predictionLabel = row.predictionText || "Sin pronóstico";
 
   return (
     <div className="rounded-[18px] border border-[rgb(var(--divider)/0.08)] bg-[rgb(var(--bg-3)/0.78)] px-3.5 py-3 shadow-[0_12px_24px_rgba(var(--shadow-color),0.08)]">
@@ -932,12 +986,12 @@ function PredictionRow({ row }: { row: MatchPredictionRow }) {
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span
-              className="inline-flex max-w-full rounded-[12px] px-3 py-1.5 text-[12px] font-semibold leading-5"
+              className="inline-flex max-w-full flex-wrap items-center rounded-[12px] px-3 py-1.5 text-[12px] font-semibold leading-5"
               style={predictionStyle}
             >
-              {predictionLabel}
+              <PredictionPillContent row={row} />
             </span>
-            {row.secondaryText ? <span className="text-[11px] leading-5 text-text-muted">{row.secondaryText}</span> : null}
+            <PredictionSecondaryContent row={row} />
           </div>
         </div>
       </div>
@@ -959,7 +1013,14 @@ function AuthRequiredModal({ match, onClose }: { match: MatchView; onClose: () =
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">Acceso privado</p>
-            <h3 className="mt-1 font-display text-[22px] font-extrabold text-text-warm">{match.displayHomeTeam} vs {match.displayAwayTeam}</h3>
+            <div className="mt-1">
+              <MatchupWithFlags
+                homeCountry={match.displayHomeTeam}
+                awayCountry={match.displayAwayTeam}
+                size="md"
+                textClassName="font-display text-[22px] font-extrabold text-text-warm"
+              />
+            </div>
             <p className="mt-2 text-sm text-text-muted">Inicia sesión en Mi Club para ver los pronósticos del club.</p>
           </div>
           <button onClick={onClose} className="rounded-xl border border-[rgb(var(--divider)/0.08)] bg-bg-2 p-2 text-text-muted transition-colors hover:text-text-primary">

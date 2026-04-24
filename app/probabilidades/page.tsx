@@ -5,7 +5,7 @@ import useSWR from "swr";
 import Image from "next/image";
 import { AlertCircle, Crown, RefreshCw, Sparkles, TrendingUp, Wifi, WifiOff } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { EmptyState, Flag, SectionTitle } from "@/components/ui";
+import { CountryWithFlag, EmptyState, Flag, SectionTitle } from "@/components/ui";
 import { FEATURED_TEAM_BY_NAME, FEATURED_TEAMS } from "@/lib/probabilities/team-config";
 
 interface ProbabilityRankingItem {
@@ -163,7 +163,11 @@ export default function ProbabilidadesPage() {
                 <Crown size={12} style={{ color: getTeamColor(heroTeam.teamName) }} />
                 Favorita del mercado
               </div>
-              <h2 className="font-display text-[34px] font-black leading-none text-text-warm sm:text-[42px]">{heroTeam.teamName}</h2>
+              <CountryWithFlag
+                country={heroTeam.teamName}
+                size="lg"
+                textClassName="font-display text-[34px] font-black leading-none text-text-warm sm:text-[42px]"
+              />
             </div>
             <div className="rounded-[24px] border border-[rgb(var(--divider)/0.16)] bg-[rgb(var(--bg-2)/0.72)] px-5 py-4 text-center shadow-[0_18px_32px_rgba(var(--shadow-color)/0.16)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">Probabilidad</p>
@@ -284,9 +288,10 @@ export default function ProbabilidadesPage() {
             </ResponsiveContainer>
             <div className="mt-3 flex flex-wrap justify-center gap-2.5">
               {historyTeams.map((team) => (
-                <span key={team.teamKey} className="inline-flex items-center gap-1 text-[10px] text-text-muted">
+                <span key={team.teamKey} className="inline-flex items-center gap-1.5 text-[10px] text-text-muted">
                   <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: team.color }} />
-                  {team.teamName}
+                  <Flag country={team.teamName} size="sm" />
+                  <span>{team.teamName}</span>
                 </span>
               ))}
             </div>

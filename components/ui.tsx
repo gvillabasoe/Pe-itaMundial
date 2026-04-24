@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getFlagPath } from "@/lib/flags";
@@ -9,18 +8,9 @@ import { GROUP_COLORS } from "@/lib/data";
 
 const FLAG_SIZES = { sm: 18, md: 22, lg: 30 } as const;
 
-function getFlagFallbackLabel(country: string) {
-  const letters = country
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((chunk) => chunk[0]?.toUpperCase() || "")
-    .join("");
+type FlagSize = keyof typeof FLAG_SIZES;
 
-  return letters || country.slice(0, 2).toUpperCase() || "--";
-}
-
-export function Flag({ country, size = "md", className = "" }: { country: string; size?: "sm" | "md" | "lg"; className?: string }) {
+export function Flag({ country, size = "md", className = "" }: { country: string; size?: FlagSize; className?: string }) {
   const flagPath = getFlagPath(country);
   const [imgError, setImgError] = useState(false);
 
@@ -29,42 +19,94 @@ export function Flag({ country, size = "md", className = "" }: { country: string
   }, [country, flagPath]);
 
   const px = FLAG_SIZES[size];
+  const height = Math.round(px * 0.67);
 
-  if (flagPath && !imgError) {
-    return (
-      <Image
-        src={flagPath}
-        alt={country}
-        width={px}
-        height={Math.round(px * 0.67)}
-        className={`rounded-[4px] border object-cover shadow-[0_4px_10px_rgba(var(--shadow-color),0.12)] ${className}`}
-        style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.05)" }}
-        onError={() => setImgError(true)}
-      />
-    );
+  if (!country || !flagPath || imgError) {
+    return null;
   }
 
-  const fontSize = size === "sm" ? "text-[9px]" : size === "lg" ? "text-[11px]" : "text-[10px]";
-  const fallbackLabel = getFlagFallbackLabel(country);
-
   return (
-    <span
-      className={`inline-flex items-center justify-center rounded-[6px] border px-1.5 py-0.5 font-bold uppercase tracking-[0.12em] leading-none shadow-[0_4px_10px_rgba(var(--shadow-color),0.08)] ${fontSize} ${className}`}
-      style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.06)", minWidth: px, minHeight: Math.round(px * 0.67) }}
-      aria-label={country}
-      title={country}
-    >
-      {fallbackLabel}
+    <img
+      src={flagPath}
+      alt={`Bandera de ${country}`}
+      width={px}
+      height={height}
+      className={`inline-block shrink-0 rounded-[4px] border object-cover shadow-[0_4px_10px_rgba(var(--shadow-color),0.12)] ${className}`}
+      style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.05)" }}
+      onError={() => setImgError(true)}
+      draggable={false}
+      decoding="async"
+    />
+  );
+}
+
+export function CountryWithFlag({
+  country,
+  size = "sm",
+  className = "",
+  textClassName = "",
+}: {
+  country: string;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+  textClassName?: string;
+}) {
+  if (!country) return null;
+  return (
+    <span className={`inline-flex items-center gap-1.5 align-middle ${className}`}>
+      <Flag country={country} size={size} />
+      <span className={textClassName}>{country}</span>
     </span>
   );
 }
 
-export function CountryWithFlag({ country, size = "sm" }: { country: string; size?: "sm" | "md" }) {
-  if (!country) return null;
+export function MatchupWithFlags({
+  homeCountry,
+  awayCountry,
+  size = "sm",
+  className = "",
+  separator = "vs",
+  textClassName = "",
+}: {
+  homeCountry: string;
+  awayCountry: string;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+  separator?: ReactNode;
+  textClassName?: string;
+}) {
   return (
-    <span className="inline-flex items-center gap-1.5 align-middle">
+    <span className={`inline-flex flex-wrap items-center justify-center gap-2 align-middle ${className}`}>
+      <CountryWithFlag country={homeCountry} size={size} textClassName={textClassName} />
+      <span className="text-text-muted">{separator}</span>
+      <CountryWithFlag country={awayCountry} size={size} textClassName={textClassName} />
+    </span>
+  );
+}
+
+export function CountrySelectionPreview({
+  country,
+  emptyLabel = "Sin seleccionar",
+  size = "sm",
+  className = "",
+}: {
+  country?: string | null;
+  emptyLabel?: string;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  if (!country) {
+    return (
+      <span className={`mt-2 inline-flex items-center rounded-full border border-[rgb(var(--divider)/0.08)] bg-[rgb(var(--bg-3)/0.7)] px-2.5 py-1 text-[11px] text-text-muted ${className}`}>
+        {emptyLabel}
+      </span>
+    );
+  }
+
+  return (
+    <span className={`mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-[rgb(var(--divider)/0.08)] bg-[rgb(var(--bg-3)/0.78)] px-2.5 py-1 text-[11px] font-medium text-text-warm ${className}`}>
       <Flag country={country} size={size} />
-      <span>{country}</span>
+      <span className="truncate">{country}</span>
     </span>
   );
 }
