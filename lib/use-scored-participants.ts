@@ -3,12 +3,36 @@
 import { useEffect, useMemo } from "react";
 import useSWR from "swr";
 import { PARTICIPANTS, type Team } from "@/lib/data";
-import { createDefaultAdminResults, sanitizeAdminResults, type AdminResults } from "@/lib/admin-results";
-import { createEmptyUserTeamsStore, hasRealUserTeams, sanitizeUserTeamsStore, type UserTeamsStore } from "@/lib/user-teams";
+import {
+  createDefaultAdminResults,
+  sanitizeAdminResults,
+  type AdminResults,
+} from "@/lib/admin-results";
+import {
+  createEmptyUserTeamsStore,
+  hasRealUserTeams,
+  sanitizeUserTeamsStore,
+  type UserTeamsStore,
+} from "@/lib/user-teams";
 import { scoreParticipants } from "@/lib/scoring";
 
 const ADMIN_RESULTS_EVENT = "penita-admin-results-updated";
 const USER_TEAMS_EVENT = "penita-user-teams-updated";
+
+// Helper compartido para cortar reintentos en bucle si Neon tiene cold-start.
+// Sin este límite, SWR reintenta indefinidamente con backoff exponencial,
+// lo que combinado con revalidateOnFocus puede crear el "loop" de carga.
+const limitedRetry = (
+  _err: unknown,
+  _key: string,
+  _config: unknown,
+  revalidate: (opts: { retryCount: number }) => void,
+  { retryCount }: { retryCount: number }
+) => {
+  if (retryCount >= 3) return;
+  const delay = Math.min(5000 * (retryCount + 1), 30_000);
+  setTimeout(() => revalidate({ retryCount }), delay);
+};
 
 const adminFetcher = async (url: string): Promise<AdminResults> => {
   const response = await fetch(url, { cache: "no-store" });
@@ -39,25 +63,24 @@ export function notifyUserTeamsUpdated() {
 }
 
 export function useUserTeamsStore() {
-  const { data, error, isLoading, mutate } = useSWR<UserTeamsStore>("/api/user-teams", userTeamsFetcher, {
-    fallbackData: createEmptyUserTeamsStore(),
-    revalidateOnMount: true,
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    shouldRetryOnError: false,
-  });
+  const { data, error, isLoading, mutate } = useSWR<UserTeamsStore>(
+    "/api/user-teams",
+    userTeamsFetcher,
+    {
+      fallbackData: createEmptyUserTeamsStore(),
+      revalidateOnFocus: true,
+      dedupingInterval: 10_000,
+      onErrorRetry: limitedRetry,
+    }
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-
-    const handleRefresh = () => {
+    const handle = () => {
       void mutate();
     };
-
-    window.addEventListener(USER_TEAMS_EVENT, handleRefresh);
-    return () => {
-      window.removeEventListener(USER_TEAMS_EVENT, handleRefresh);
-    };
+    window.addEventListener(USER_TEAMS_EVENT, handle);
+    return () => window.removeEventListener(USER_TEAMS_EVENT, handle);
   }, [mutate]);
 
   return {
@@ -69,23 +92,25 @@ export function useUserTeamsStore() {
 }
 
 export function useScoredParticipants() {
-  const { data, error, isLoading, mutate } = useSWR<AdminResults>("/api/admin-results", adminFetcher, {
-    fallbackData: createDefaultAdminResults(),
-    revalidateOnFocus: true,
-  });
+  const { data, error, isLoading, mutate } = useSWR<AdminResults>(
+    "/api/admin-results",
+    adminFetcher,
+    {
+      fallbackData: createDefaultAdminResults(),
+      revalidateOnFocus: true,
+      dedupingInterval: 10_000,
+      onErrorRetry: limitedRetry,
+    }
+  );
   const userTeams = useUserTeamsStore();
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-
-    const handleRefresh = () => {
+    const handle = () => {
       void mutate();
     };
-
-    window.addEventListener(ADMIN_RESULTS_EVENT, handleRefresh);
-    return () => {
-      window.removeEventListener(ADMIN_RESULTS_EVENT, handleRefresh);
-    };
+    window.addEventListener(ADMIN_RESULTS_EVENT, handle);
+    return () => window.removeEventListener(ADMIN_RESULTS_EVENT, handle);
   }, [mutate]);
 
   const adminResults = useMemo(() => sanitizeAdminResults(data), [data]);
@@ -95,7 +120,10 @@ export function useScoredParticipants() {
     }
     return PARTICIPANTS;
   }, [userTeams.store]);
-  const participants = useMemo<Team[]>(() => scoreParticipants(sourceParticipants, adminResults), [sourceParticipants, adminResults]);
+  const participants = useMemo<Team[]>(
+    () => scoreParticipants(sourceParticipants, adminResults),
+    [sourceParticipants, adminResults]
+  );
 
   return {
     adminResults,
