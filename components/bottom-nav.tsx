@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Home, Shield, Swords, Trophy } from "lucide-react";
+import { Home, BarChart3, Trophy, Shield, Swords } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: Home },
@@ -10,30 +10,24 @@ const NAV_ITEMS = [
   { href: "/resultados", label: "Resultados", icon: Trophy },
   { href: "/mi-club", label: "Mi Club", icon: Shield },
   { href: "/versus", label: "Versus", icon: Swords },
-] as const;
+];
 
 export function BottomNav() {
   const pathname = usePathname();
-
-  if (pathname.startsWith("/admin")) {
-    return null;
-  }
-
   return (
     <nav className="nav-bottom" aria-label="Navegación principal">
       {NAV_ITEMS.map((item) => {
-        const isResultsAlias = item.href === "/resultados" && pathname.startsWith("/mundial-2026");
-        const isHomeAlias = item.href === "/" && pathname.startsWith("/probabilidades");
-        const isActive = item.href === "/" ? pathname === "/" || isHomeAlias : pathname.startsWith(item.href) || isResultsAlias;
-
+        const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`nav-bottom__item ${isActive ? "is-active" : ""}`}
+            aria-label={item.label}
+            aria-current={isActive ? "page" : undefined}
+            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10px] font-medium transition-all duration-150 no-underline ${isActive ? "text-gold" : "text-text-muted"}`}
           >
-            <item.icon size={18} />
-            <span>{item.label}</span>
+            <item.icon size={19} strokeWidth={isActive ? 2.2 : 1.8} aria-hidden="true" />
+            <span className={isActive ? "font-semibold" : ""}>{item.label}</span>
           </Link>
         );
       })}

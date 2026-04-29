@@ -1,9 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type Theme = "dark" | "light";
+type Theme = "light" | "dark";
 
 interface ThemeContextValue {
   theme: Theme;
@@ -11,51 +10,39 @@ interface ThemeContextValue {
   toggleTheme: () => void;
 }
 
+const ThemeContext = createContext<ThemeContextValue | null>(null);
 const STORAGE_KEY = "penita-theme";
 
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
-  setTheme: () => {},
-  toggleTheme: () => {},
-});
-
-function applyTheme(theme: Theme) {
-  if (typeof document === "undefined") return;
-  const root = document.documentElement;
-  root.classList.toggle("light", theme === "light");
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  // Light es el default. Solo cambia si el usuario lo guardó previamente.
+  const [theme, setThemeState] = useState<Theme>("light");
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      const nextTheme: Theme = saved === "light" ? "light" : "dark";
-      setThemeState(nextTheme);
-      applyTheme(nextTheme);
-    } catch {
-      applyTheme("dark");
-    }
+      const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+      if (stored === "dark" || stored === "light") setThemeState(stored);
+    } catch {}
+    setHydrated(true);
   }, []);
 
-  const setTheme = (nextTheme: Theme) => {
-    setThemeState(nextTheme);
-    applyTheme(nextTheme);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, nextTheme);
-    } catch {
-      // ignore storage failures
-    }
-  };
+  useEffect(() => {
+    if (!hydrated) return;
+    const root = document.documentElement;
+    if (theme === "dark") root.classList.add("dark");
+    else root.classList.remove("dark");
+    try { localStorage.setItem(STORAGE_KEY, theme); } catch {}
+  }, [theme, hydrated]);
 
-  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
-
-  const value = useMemo(() => ({ theme, setTheme, toggleTheme }), [theme]);
-
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme: setThemeState, toggleTheme: () => setThemeState((p) => p === "light" ? "dark" : "light") }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
 export function useTheme() {
-  return useContext(ThemeContext);
+  const ctx = useContext(ThemeContext);
+  if (!ctx) return { theme: "light" as Theme, setTheme: () => {}, toggleTheme: () => {} };
+  return ctx;
 }

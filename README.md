@@ -1,92 +1,59 @@
-# Peñita Mundial · IV Edición
+# Peñita Mundial · Auditoría completa + entrega
 
-Versión Vercel-ready de la porra del Mundial 2026, ya fusionada con la app premium en JSX y con módulo de probabilidades integrado.
+ZIP listo para subir al repositorio. **18 archivos** organizados en la misma estructura que `gvillabasoe/Mundial2026`.
 
-## Qué incluye
-
-- Inicio con logo, cuenta atrás, accesos rápidos, top 3, radar premium, actividad y sistema de puntuación completo.
-- Clasificación con búsqueda, filtros, favoritos persistentes y ficha detallada de cada equipo.
-- Resultados unificados con los 104 partidos del Mundial, filtros por fase, región y ciudad, hora siempre en Europe/Madrid, polling en vivo cada 15 segundos y prioridad visual de cualquier marcador guardado desde Admin.
-- Mi Club con login demo, selector de equipo, tabs de resumen, partidos, grupos, eliminatorias, especiales y favoritos, además de acceso directo a Admin.
-- Admin rediseñado con editor de resultados oficiales para los 104 partidos, filtros por grupo o fase, posiciones de grupos, eliminatorias, final y especiales.
-- Probabilidades de ganador vía Polymarket, con API interna en `/api/probabilities`, refresco periódico, hero premium, histórico y shortlist filtrada.
-- Tema dark/light persistente con anti-flash.
-- Ruta legado `/mundial-2026` redirigida a `/resultados`.
-- Banderas PNG reales para toda la app usando los assets de `public/flags`; si falta un archivo concreto, la interfaz muestra un marcador neutro de texto, no emojis.
-- Documentación técnica de API-FOOTBALL para el Mundial 2026 incluida en `docs/api-football-world-cup-2026.md`.
-
-## Credenciales demo
-
-- Usuarios: los handles de `MOCK_USERS` en `lib/data.ts`
-- Contraseña: cualquiera
-
-## Variables de entorno
+## ⚡ Quick start
 
 ```bash
-DATABASE_URL=
-API_SPORTS_KEY=
-API_FOOTBALL_KEY=
-POLYMARKET_GAMMA_BASE=https://gamma-api.polymarket.com
-```
+# 1. Descomprimir en la raíz del repo (sobrescribe los archivos existentes)
+unzip penita-mundial-final.zip -d .
 
-Notas:
+# 2. Ejecutar migración SQL en Neon (SQL Editor → pegar → Run)
+cat sql/002_add_username_safe.sql
 
-- `DATABASE_URL` activa la persistencia real en Neon / Postgres para `user_teams` y `admin_results`.
-- `API_SPORTS_KEY` o `API_FOOTBALL_KEY` habilitan las llamadas server-side a API-FOOTBALL para el Mundial 2026.
-- Si la API no responde o no hay clave configurada, la app mantiene el calendario base del Mundial y puede seguir mostrando los resultados oficiales cargados manualmente desde Admin.
-- `POLYMARKET_GAMMA_BASE` es opcional. La lectura de mercados se hace contra la Gamma API pública de Polymarket; solo se deja como override por si quieres apuntar a otro host compatible.
+# 3. Verificar test del fix Phase 2
+npx tsx lib/__tests__/scoring-mapping.test.ts
+# → Debe imprimir: 4 passed, 0 failed
 
-## Desarrollo local
-
-```bash
+# 4. Build y deploy
 npm install
-npm run dev
+npm run build
+git add . && git commit -m "feat: light-first premium UI + scoring fix" && git push
 ```
 
-## Estructura principal
+## 📋 Qué incluye
 
-```text
-app/
-  page.tsx
-  clasificacion/page.tsx
-  resultados/page.tsx
-  mi-club/page.tsx
-  admin/page.tsx
-  versus/page.tsx
-  probabilidades/page.tsx
-  mundial-2026/page.tsx
-  api/results/fixtures/route.ts
-  api/admin-results/route.ts
-  api/probabilities/route.ts
-  api/worldcup-probabilities/route.ts
-components/
-  auth-provider.tsx
-  bottom-nav.tsx
-  theme-provider.tsx
-  theme-toggle.tsx
-  ui.tsx
-  worldcup/match-card.tsx
-lib/
-  admin-results.ts
-  scoring.ts
-  use-scored-participants.ts
-  data.ts
-  flags.ts
-  probabilities/polymarket.ts
-  probabilities/team-config.ts
-  predictions/team-config.ts
-  config/regions.ts
-  config/match-status.ts
-  worldcup/schedule.ts
-public/
-  Logo_Porra_Mundial_2026.webp
-  flags/*.png
-docs/
-  api-football-world-cup-2026.md
-```
+| Phase | Archivo | Cambio |
+|---|---|---|
+| **2** | `lib/scoring.ts` | Fix root cause del bug de marcador exacto (indexación bidireccional) |
+| **2** | `lib/__tests__/scoring-mapping.test.ts` | Test de regresión |
+| **3** | `app/globals.css` | Design system light-first completo |
+| **3** | `tailwind.config.ts` | Tokens via CSS vars |
+| **3** | `app/layout.tsx` | ThemeProvider + ToastProvider integrados |
+| **3** | `components/theme-provider.tsx` | Light por defecto, dark opcional |
+| **3** | `components/theme-toggle.tsx` | Toggle Sun/Moon |
+| **3** | `components/toast-provider.tsx` | Sistema global de toasts |
+| **3** | `components/ui.tsx` | `<PickChip>`, `<Medal>`, `<InitialsAvatar>`, `<Skeleton>` (Flag intacto) |
+| **3** | `components/bottom-nav.tsx` | Nav inferior light polished |
+| **3** | `app/clasificacion/page.tsx` | Medallas + avatares + breakdown colapsable |
+| **3** | `app/resultados/page.tsx` | PickChips inline en predicciones |
+| **3** | `app/mi-club/page.tsx` | Hero card premium + skeletons + toasts |
+| **4** | `components/builder-helpers.tsx` | Helpers visuales NO invasivos para Mi Porra |
+| **Sec.** | `app/api/admin-results/route.ts` | Validación tamaño payload |
+| **Sec.** | `lib/use-scored-participants.ts` | Reintentos limitados + dedupe |
+| **DB** | `sql/002_add_username_safe.sql` | Migración idempotente |
+| **Docs** | `docs/CAMBIOS-AUDITORIA.md` | Detalle completo Phase 1–5 |
 
-## Notas
+## ⚠️ Importante
 
-- La navegación principal mantiene 5 ítems en la barra inferior: Inicio, Ranking, Resultados, Mi Club y Versus. Probabilidades queda accesible desde la home y por ruta directa.
-- La identidad visual usa el logo en una ruta segura sin caracteres problemáticos: `public/Logo_Porra_Mundial_2026.webp`.
-- El proyecto está preparado para desplegar en Vercel tal cual, con fallback demo cuando no hay claves configuradas.
+1. **Rotar `DATABASE_URL`** en Neon — la actual estaba en `.env.local` commiteada.
+2. **Eliminar del git history** la credencial expuesta (`git filter-repo` o BFG).
+3. **`mi-porra-builder.tsx`** no se ha modificado — está intacto. Los helpers de `components/builder-helpers.tsx` son opcionales y se pueden integrar cuando localices el archivo. Las clases CSS (`.field-group`, `.stepper-*`, `.floating-cta`) ya funcionan sin tocar el builder.
+
+## 🚦 Validación post-deploy
+
+1. Entra a `/admin` con `@canallita / oyarsexo`.
+2. Carga el resultado del partido **#25 Chequia vs Sudáfrica**: por ejemplo `2-1`. Pulsa Guardar.
+3. Entra como Carlos_M en `/mi-club` → pestaña "Partidos" → grupo A.
+4. El partido **Sudáfrica vs Chequia** (orden invertido en el mock) debe mostrar puntos calculados (✅ acierto/❌ fallo según el pick), NO "Pendiente".
+5. Si sigue en "Pendiente" → ejecuta el test (`npx tsx lib/__tests__/scoring-mapping.test.ts`) y revisa la consola del servidor en frío buscando `[scoring] N fixtures de grupo sin matchId`.

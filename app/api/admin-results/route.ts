@@ -7,6 +7,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// Límite razonable para el payload de admin-results: 256 KB.
+// El payload normal pesa ~30 KB; cualquier cosa por encima es sospechosa.
+const MAX_PAYLOAD_BYTES = 256 * 1024;
+
 function responseHeaders() {
   return {
     "Cache-Control": "no-store, max-age=0",
@@ -31,6 +35,18 @@ export async function POST(request: Request) {
 
   if (!isAdmin) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401, headers: responseHeaders() });
+  }
+
+  // Validación de tamaño del payload (defensa en profundidad)
+  const contentLength = request.headers.get("content-length");
+  if (contentLength) {
+    const size = Number(contentLength);
+    if (Number.isFinite(size) && size > MAX_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        { error: `Payload demasiado grande (${size} bytes, máximo ${MAX_PAYLOAD_BYTES})` },
+        { status: 413, headers: responseHeaders() }
+      );
+    }
   }
 
   try {

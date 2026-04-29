@@ -1,278 +1,398 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Lock, Search, Star, X } from "lucide-react";
-import { CountryWithFlag, EmptyState, Flag, GroupBadge } from "@/components/ui";
+import { BarChart3, ChevronDown, ChevronUp, Search, Star, X } from "lucide-react";
+import {
+  CountryWithFlag,
+  EmptyState,
+  Flag,
+  GroupBadge,
+  InitialsAvatar,
+  Medal,
+  PickChip,
+  Skeleton,
+} from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
-import { FIXTURES, GROUPS, GROUP_COLORS, KNOCKOUT_ROUND_DEFS, type Team } from "@/lib/data";
+import { FIXTURES, GROUPS, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
 export default function ClasificacionPage() {
   const { user, favorites, toggleFavorite } = useAuth();
-  const { participants } = useScoredParticipants();
+  const { participants, isLoading } = useScoredParticipants();
   const [filter, setFilter] = useState("all");
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [search, setSearch] = useState("");
-  const [authHint, setAuthHint] = useState<string | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     let list = [...participants];
-    if (filter === "mine" && user) {
-      list = list.filter((participant) => participant.userId === user.id);
-    } else if (filter === "top10") {
-      list = participants.slice(0, 10);
-    } else if (filter === "tied") {
+    if (filter === "mine" && user) list = list.filter((p) => p.userId === user.id);
+    else if (filter === "top10") list = participants.slice(0, 10);
+    else if (filter === "tied") {
       const counts: Record<number, number> = {};
-      participants.forEach((participant) => {
-        counts[participant.totalPoints] = (counts[participant.totalPoints] || 0) + 1;
+      participants.forEach((p) => {
+        counts[p.totalPoints] = (counts[p.totalPoints] || 0) + 1;
       });
-      list = participants.filter((participant) => counts[participant.totalPoints] > 1);
+      list = participants.filter((p) => counts[p.totalPoints] > 1);
     }
-
     if (search.trim()) {
-      const query = search.trim().toLowerCase();
-      list = list.filter((participant) => participant.name.toLowerCase().includes(query) || participant.username.toLowerCase().includes(query));
+      const q = search.trim().toLowerCase();
+      list = list.filter((p) => p.name.toLowerCase().includes(q) || p.username.toLowerCase().includes(q));
     }
-
     return list;
   }, [filter, participants, search, user]);
 
   const favoriteTeams = useMemo(() => {
     if (!user || !favorites.length) return [];
-    return participants.filter((participant) => favorites.includes(participant.id));
+    return participants.filter((p) => favorites.includes(p.id));
   }, [favorites, participants, user]);
 
-  const getMedalColor = (rank: number) => rank === 1 ? "#D4AF37" : rank === 2 ? "#C0C0C0" : rank === 3 ? "#CD7F32" : null;
-
-  const Row = ({ participant, index }: { participant: Team; index: number }) => {
-    const medal = getMedalColor(participant.currentRank);
-    const mine = user && participant.userId === user.id;
-    const favorite = favorites.includes(participant.id);
-
-    return (
-      <div
-        className="card flex cursor-pointer items-center gap-2.5 !px-3 !py-2.5 animate-fade-in"
-        style={{
-          animationDelay: `${index * 0.02}s`,
-          borderLeft: medal ? `3px solid ${medal}` : mine ? "3px solid #6BBF78" : "3px solid transparent",
-          background: mine ? "rgba(107,191,120,0.04)" : undefined,
-        }}
-        onClick={() => setSelectedTeam(participant)}
-      >
-        <span className="min-w-[28px] text-center font-display text-base font-extrabold" style={{ color: medal || "#98A3B8" }}>{participant.currentRank}</span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-text-warm">{participant.name}</p>
-          <p className="text-[11px] text-text-muted">@{participant.username}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="font-display text-base font-bold" style={{ color: medal || "rgb(var(--text-primary))" }}>{participant.totalPoints}</span>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!user) {
-                setAuthHint("Inicia sesión en Mi Club para guardar favoritos.");
-                return;
-              }
-              setAuthHint(null);
-              toggleFavorite(participant.id);
-            }}
-            className="cursor-pointer border-none bg-transparent p-1"
-          >
-            {favorite ? <Star size={14} fill="#D4AF37" color="#D4AF37" /> : <Star size={14} color="#98A3B8" className="opacity-30" />}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="mx-auto max-w-[640px] px-4 pt-4">
-      <div className="animate-fade-in mb-4 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-extrabold text-text-warm">Clasificación</h1>
+    <div className="px-4 pt-5 max-w-[640px] mx-auto">
+      <div className="page-header animate-fade-in">
+        <h1 className="page-header__title">Ranking</h1>
       </div>
 
-      <div className="relative mb-2.5">
-        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input className="input-field !pl-9" placeholder="Buscar equipo o usuario..." value={search} onChange={(event) => setSearch(event.target.value)} />
+      <div className="relative mb-3">
+        <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" aria-hidden="true" />
+        <input
+          className="input-field !pl-9"
+          placeholder="Buscar equipo o jugador..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Buscar en la clasificación"
+        />
       </div>
 
-      <div className="mb-3.5 flex gap-1.5 overflow-x-auto pb-1">
+      <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
         {[
           { key: "all", label: "Todos" },
           { key: "mine", label: "Mis equipos" },
           { key: "top10", label: "Top 10" },
           { key: "tied", label: "Empatados" },
-        ].map((item) => (
+        ].map((f) => (
           <button
-            key={item.key}
-            className={`pill ${filter === item.key ? "active" : ""}`}
-            onClick={() => setFilter(item.key)}
+            key={f.key}
+            className={`pill ${filter === f.key ? "active" : ""}`}
+            onClick={() => { if (f.key === "mine" && !user) return; setFilter(f.key); }}
+            disabled={f.key === "mine" && !user}
           >
-            {item.label}
+            {f.label}
           </button>
         ))}
       </div>
 
-      {filter === "mine" && !user ? (
-        <div className="card mb-4 text-center !py-6">
-          <Lock size={28} className="mx-auto mb-2 text-text-muted opacity-40" />
-          <p className="mb-2 text-sm text-text-muted">Inicia sesión para ver tus equipos</p>
-          <a href="/mi-club" className="btn btn-ghost text-xs !py-2 no-underline">Ir a Mi Club</a>
-        </div>
-      ) : null}
-
-      {authHint ? (
-        <div className="mb-3 rounded-[12px] border border-gold/20 bg-gold/10 px-3 py-2 text-xs text-gold-light">{authHint}</div>
-      ) : null}
-
-      {user && favoriteTeams.length > 0 && !search && filter === "all" ? (
-        <div className="mb-4 animate-fade-in">
-          <h3 className="mb-2 flex items-center gap-1.5 font-display text-sm font-bold text-gold">
-            <Star size={14} className="text-gold" /> Favoritos
+      {favoriteTeams.length > 0 && filter === "all" && !search.trim() && (
+        <section className="mb-4 animate-fade-in">
+          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mb-2 flex items-center gap-1.5">
+            <Star size={11} className="text-gold" /> Favoritos
           </h3>
-          <div className="flex flex-col gap-1">{favoriteTeams.map((participant, index) => <Row key={`fav-${participant.id}`} participant={participant} index={index} />)}</div>
-          <div className="soft-divider my-3" />
-        </div>
-      ) : null}
+          <div className="flex flex-col gap-1">
+            {favoriteTeams.map((p) => (
+              <ParticipantRow
+                key={`fav-${p.id}`}
+                participant={p}
+                isMine={user?.id === p.userId}
+                isFavorite
+                onToggleFavorite={() => user && toggleFavorite(p.id)}
+                onOpen={() => setSelectedTeam(p)}
+                expanded={expandedRow === `fav-${p.id}`}
+                onToggleExpand={() => setExpandedRow(expandedRow === `fav-${p.id}` ? null : `fav-${p.id}`)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
-      {filtered.length === 0 ? (
-        <EmptyState text={search ? "No se encontraron resultados" : "La clasificación se actualizará según avance el torneo"} icon={search ? Search : BarChart3} />
-      ) : filter === "mine" && !user ? null : (
+      {isLoading ? (
+        <div className="flex flex-col gap-1.5">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} style={{ height: 56 }} />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState text="Sin resultados" icon={BarChart3} />
+      ) : (
         <div className="flex flex-col gap-1">
-          {filtered.map((participant, index) => <Row key={participant.id} participant={participant} index={index} />)}
+          {filtered.map((p) => (
+            <ParticipantRow
+              key={p.id}
+              participant={p}
+              isMine={user?.id === p.userId}
+              isFavorite={favorites.includes(p.id)}
+              onToggleFavorite={() => user && toggleFavorite(p.id)}
+              onOpen={() => setSelectedTeam(p)}
+              expanded={expandedRow === p.id}
+              onToggleExpand={() => setExpandedRow(expandedRow === p.id ? null : p.id)}
+            />
+          ))}
         </div>
       )}
 
-      {selectedTeam ? (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={() => setSelectedTeam(null)}>
-          <div className="max-h-[85vh] w-full max-w-[640px] overflow-y-auto rounded-t-[20px] bg-bg-4 p-5 animate-slide-up" onClick={(event) => event.stopPropagation()}>
-            <div className="mx-auto mb-4 h-1 w-9 rounded-full" style={{ background: "rgba(var(--divider),0.18)" }} />
+      {selectedTeam && (
+        <div
+          className="fixed inset-0 z-[200] flex items-end justify-center"
+          style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}
+          onClick={() => setSelectedTeam(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="rounded-t-3xl w-full max-w-[640px] max-h-[88vh] overflow-y-auto p-5 animate-slide-up bg-bg-1"
+            style={{ border: "1px solid rgb(var(--border-default))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ background: "rgb(var(--border-default))" }} />
             <ParticipantDetail team={selectedTeam} onClose={() => setSelectedTeam(null)} />
           </div>
         </div>
-      ) : null}
+      )}
+    </div>
+  );
+}
+
+function ParticipantRow({
+  participant, isMine, isFavorite, onToggleFavorite, onOpen, expanded, onToggleExpand,
+}: {
+  participant: Team; isMine: boolean; isFavorite: boolean;
+  onToggleFavorite: () => void; onOpen: () => void;
+  expanded: boolean; onToggleExpand: () => void;
+}) {
+  const rank = participant.currentRank;
+  const hasMedal = rank >= 1 && rank <= 3;
+
+  return (
+    <div className="flex flex-col">
+      <div
+        className="card flex items-center gap-2.5 !py-3 !px-3.5 cursor-pointer animate-fade-in"
+        style={{
+          borderLeft: hasMedal
+            ? `3px solid ${rank === 1 ? "#C99625" : rank === 2 ? "#9CA3AF" : "#A66830"}`
+            : isMine ? "3px solid rgb(var(--accent-participante))" : "3px solid transparent",
+          background: isMine ? "rgba(63,157,78,0.04)" : undefined,
+        }}
+        onClick={onOpen}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      >
+        <div className="flex items-center gap-1.5 min-w-[36px]">
+          {hasMedal ? (
+            <Medal rank={rank} />
+          ) : (
+            <span className="font-display text-sm font-extrabold text-text-faint min-w-[20px] text-center">{rank}</span>
+          )}
+        </div>
+
+        <InitialsAvatar name={participant.name} size={36} />
+
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-text-primary truncate">{participant.name}</p>
+          <p className="text-[10px] text-text-muted">@{participant.username}</p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="text-right">
+            <span className="font-display text-base font-bold text-text-warm tabular-nums">{participant.totalPoints}</span>
+            <span className="text-[9px] text-text-muted ml-0.5">pts</span>
+          </div>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
+            className="p-1.5 bg-transparent border-none cursor-pointer rounded-md hover:bg-bg-2 transition-colors"
+            aria-label={isFavorite ? "Quitar de favoritos" : "Marcar como favorito"}
+          >
+            {isFavorite
+              ? <Star size={14} fill="rgb(var(--gold))" color="rgb(var(--gold))" />
+              : <Star size={14} className="text-text-faint" />}
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+            className="p-1.5 bg-transparent border-none cursor-pointer rounded-md hover:bg-bg-2 transition-colors text-text-muted"
+            aria-label={expanded ? "Contraer detalle" : "Expandir detalle"}
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div
+          className="mt-1 mb-1 px-3.5 py-3 rounded-xl animate-slide-down"
+          style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}
+        >
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <BreakdownStat label="Grupos" value={participant.groupPoints} />
+            <BreakdownStat label="Eliminatorias" value={participant.finalPhasePoints} />
+            <BreakdownStat label="Especiales" value={participant.specialPoints} />
+          </div>
+          <MatchBreakdown team={participant} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BreakdownStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="text-center p-2 rounded-lg" style={{ background: "rgb(var(--bg-surface))" }}>
+      <p className="text-[9px] uppercase tracking-wider text-text-muted mb-0.5">{label}</p>
+      <p className="font-display text-base font-bold text-text-primary tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function MatchBreakdown({ team }: { team: Team }) {
+  const groupedFixtures = useMemo(() => {
+    const map: Record<string, typeof FIXTURES> = {};
+    FIXTURES.forEach((f) => {
+      if (!f.group) return;
+      if (!map[f.group]) map[f.group] = [];
+      map[f.group].push(f);
+    });
+    return map;
+  }, []);
+
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  return (
+    <div>
+      <p className="text-[9px] uppercase tracking-widest font-semibold text-text-muted mb-2">Picks por grupo</p>
+      <div className="flex flex-wrap gap-1 mb-2">
+        {Object.keys(groupedFixtures).map((g) => (
+          <button
+            key={g}
+            className={`pill !py-1 !px-2.5 text-[10px] ${openGroup === g ? "active" : ""}`}
+            onClick={() => setOpenGroup(openGroup === g ? null : g)}
+          >
+            {g}
+          </button>
+        ))}
+      </div>
+      {openGroup && (
+        <div className="flex flex-col gap-1 animate-fade-in">
+          {groupedFixtures[openGroup].map((fixture) => {
+            const pick = team.matchPicks?.[fixture.id];
+            if (!pick) return null;
+            const isDouble = team.doubleMatches?.[openGroup] === fixture.id;
+            return (
+              <div
+                key={fixture.id}
+                className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg text-[11px]"
+                style={{ background: "rgb(var(--bg-surface))" }}
+              >
+                <div className="flex items-center gap-1 flex-1 min-w-0">
+                  <Flag country={fixture.homeTeam} size="sm" />
+                  <span className="truncate">{fixture.homeTeam}</span>
+                </div>
+                <span
+                  className="font-display text-xs font-bold tabular-nums px-2 py-0.5 rounded-md"
+                  style={{
+                    background: isDouble ? "rgb(var(--gold-soft))" : "rgb(var(--bg-muted))",
+                    color: isDouble ? "rgb(var(--gold))" : "rgb(var(--text-secondary))",
+                    border: isDouble ? "1px solid rgba(var(--gold),0.3)" : undefined,
+                  }}
+                >
+                  {pick.home}-{pick.away}
+                </span>
+                <div className="flex items-center gap-1 flex-1 min-w-0 justify-end">
+                  <span className="truncate">{fixture.awayTeam}</span>
+                  <Flag country={fixture.awayTeam} size="sm" />
+                </div>
+                <PickChip status={pick.status} points={pick.points} />
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void }) {
+  const hasMedal = team.currentRank >= 1 && team.currentRank <= 3;
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="font-display text-xl font-extrabold text-text-warm">{team.name}</h3>
-          <p className="text-xs text-text-muted">@{team.username}</p>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <InitialsAvatar name={team.name} size={44} />
+          <div>
+            <h3 className="font-display text-xl font-black tracking-tight text-text-warm">{team.name}</h3>
+            <p className="text-xs text-text-muted mt-0.5">@{team.username}</p>
+          </div>
         </div>
-        <button onClick={onClose} className="cursor-pointer rounded-lg border-none bg-bg-2 p-2 text-text-muted"><X size={18} /></button>
+        <button onClick={onClose} className="rounded-xl p-2 cursor-pointer text-text-muted bg-bg-2 border-none" aria-label="Cerrar">
+          <X size={17} />
+        </button>
       </div>
 
-      <div className="card mb-4 bg-gradient-to-br from-bg-2 to-bg-4 text-center !border-gold/15">
-        <p className="mb-0.5 text-[11px] text-text-muted">Puntos</p>
-        <p className="font-display text-4xl font-black text-gold-light">{team.totalPoints}</p>
-        <span className="badge badge-gold">#{team.currentRank}</span>
+      <div
+        className="card-elevated rounded-2xl text-center py-5 mb-4"
+        style={{
+          background: "linear-gradient(135deg, rgba(var(--gold-soft), 1), rgba(var(--bg-surface), 1))",
+          border: "1px solid rgba(var(--gold), 0.18)",
+        }}
+      >
+        <p className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Puntos totales</p>
+        <p className="font-display text-5xl font-black text-gold tabular-nums">{team.totalPoints}</p>
+        <div className="mt-2 flex items-center justify-center gap-2">
+          {hasMedal && <Medal rank={team.currentRank} />}
+          <span className="badge badge-gold">#{team.currentRank}</span>
+        </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2 mb-4">
         {[
-          { label: "Fase de grupos", value: team.groupPoints, color: "#27E6AC" },
-          { label: "Fase final", value: team.finalPhasePoints, color: "#DFBE38" },
-          { label: "Especiales", value: team.specialPoints, color: "#F0417A" },
-        ].map((item) => (
-          <div key={item.label} className="card text-center !p-3">
-            <p className="mb-1 text-[10px] text-text-muted">{item.label}</p>
-            <p className="font-display text-xl font-extrabold" style={{ color: item.color }}>{item.value}</p>
+          { label: "Grupos", val: team.groupPoints, color: "rgb(var(--success))" },
+          { label: "Eliminatorias", val: team.finalPhasePoints, color: "rgb(var(--gold))" },
+          { label: "Especiales", val: team.specialPoints, color: "rgb(var(--accent-versus))" },
+        ].map((k) => (
+          <div key={k.label} className="card text-center !p-3">
+            <p className="text-[9px] text-text-muted uppercase tracking-wider mb-1">{k.label}</p>
+            <p className="font-display text-2xl font-bold tabular-nums" style={{ color: k.color }}>{k.val}</p>
           </div>
         ))}
       </div>
 
-      <div className="mb-3 flex gap-2">
-        <div className="card flex flex-1 items-center gap-2">
-          <Flag country={team.championPick} size="sm" />
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="card flex items-center gap-2.5">
+          <Flag country={team.championPick} size="md" />
           <div>
-            <p className="text-[10px] text-text-muted">Campeón</p>
-            <p className="text-xs font-semibold">{team.championPick}</p>
+            <p className="text-[9px] text-text-muted uppercase tracking-wider">Campeón</p>
+            <p className="text-sm font-semibold text-text-primary">{team.championPick}</p>
           </div>
         </div>
-        <div className="card flex flex-1 items-center gap-2">
-          <Flag country={team.runnerUpPick} size="sm" />
+        <div className="card flex items-center gap-2.5">
+          <Flag country={team.runnerUpPick} size="md" />
           <div>
-            <p className="text-[10px] text-text-muted">Subcampeón</p>
-            <p className="text-xs font-semibold">{team.runnerUpPick}</p>
+            <p className="text-[9px] text-text-muted uppercase tracking-wider">Subcampeón</p>
+            <p className="text-sm font-semibold text-text-primary">{team.runnerUpPick}</p>
           </div>
         </div>
       </div>
 
-      <h4 className="mb-2 font-display text-sm font-bold text-text-warm">Especiales</h4>
-      <div className="mb-3 grid grid-cols-2 gap-1.5">
+      <h4 className="text-[10px] text-text-muted uppercase tracking-widest mb-2">Picks especiales</h4>
+      <div className="grid grid-cols-2 gap-1.5">
         {[
-          { label: "Mejor Jugador", value: team.specials.mejorJugador },
-          { label: "Mejor Joven", value: team.specials.mejorJoven },
-          { label: "Máx. Goleador", value: team.specials.maxGoleador },
-          { label: "Máx. Asistente", value: team.specials.maxAsistente },
-          { label: "Mejor Portero", value: team.specials.mejorPortero },
-          { label: "Goleador ESP", value: team.specials.maxGoleadorEsp },
-          { label: "Revelación", value: team.specials.revelacion, isCountry: true },
-          { label: "Decepción", value: team.specials.decepcion, isCountry: true },
-        ].map((item) => (
-          <div key={item.label} className="rounded-lg bg-bg-2 px-2.5 py-2">
-            <p className="text-[9px] uppercase tracking-wide text-text-muted">{item.label}</p>
-            <p className="mt-0.5 text-xs font-semibold">{item.isCountry ? <CountryWithFlag country={item.value} /> : item.value}</p>
+          { label: "Mejor Jugador", val: team.specials.mejorJugador },
+          { label: "Mejor Joven", val: team.specials.mejorJoven },
+          { label: "Máx. Goleador", val: team.specials.maxGoleador },
+          { label: "Máx. Asistente", val: team.specials.maxAsistente },
+          { label: "Mejor Portero", val: team.specials.mejorPortero },
+          { label: "Goleador ESP", val: team.specials.maxGoleadorEsp },
+          { label: "Revelación", val: team.specials.revelacion, isC: true },
+          { label: "Decepción", val: team.specials.decepcion, isC: true },
+        ].map((s, i) => (
+          <div key={i} className="py-2 px-2.5 rounded-xl" style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}>
+            <p className="text-[9px] text-text-muted uppercase tracking-wider mb-0.5">{s.label}</p>
+            <p className="text-xs font-semibold text-text-primary">
+              {s.isC ? <CountryWithFlag country={String(s.val)} size="sm" /> : s.val}
+            </p>
           </div>
         ))}
       </div>
-      <div className="mb-4 rounded-lg bg-bg-2 px-2.5 py-2">
-        <p className="text-[9px] uppercase tracking-wide text-text-muted">Min. primer gol</p>
-        <p className="mt-0.5 text-xs font-semibold">{team.specials.minutoPrimerGol}&apos;</p>
-      </div>
-
-      {team.doubleMatches ? (
-        <>
-          <h4 className="mb-2 font-display text-sm font-bold text-text-warm">Partidos doble puntuación</h4>
-          <div className="mb-3 grid grid-cols-2 gap-1.5">
-            {Object.entries(team.doubleMatches).map(([group, fixtureId]) => {
-              const fixture = FIXTURES.find((item) => item.id === fixtureId);
-              if (!fixture) return null;
-              return (
-                <div key={group} className="rounded-lg bg-bg-2 px-2.5 py-2" style={{ borderLeft: `2px solid ${GROUP_COLORS[group]}` }}>
-                  <div className="mb-1 flex items-center gap-1">
-                    <GroupBadge group={group} />
-                    <span className="badge badge-amber text-[8px] !px-1.5 !py-0">DOBLE</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                    <Flag country={fixture.homeTeam} size="sm" /><span>{fixture.homeTeam}</span>
-                    <span className="text-text-muted">vs</span>
-                    <Flag country={fixture.awayTeam} size="sm" /><span>{fixture.awayTeam}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      ) : null}
-
-      {team.knockoutPicks ? (
-        <>
-          <h4 className="mb-2 font-display text-sm font-bold text-text-warm">Eliminatorias</h4>
-          <div className="mb-3 space-y-2">
-            {KNOCKOUT_ROUND_DEFS.map((round) => {
-              const picks = team.knockoutPicks[round.key] || [];
-              if (!picks.length) return null;
-              return (
-                <div key={round.key}>
-                  <p className="mb-1 text-[10px] text-text-muted">{round.name} ({round.pts} pts)</p>
-                  <div className="flex flex-wrap gap-1">
-                    {picks.map((pick, index) => (
-                      <span key={`${round.key}-${index}`} className="inline-flex items-center gap-1 rounded bg-bg-3 px-1.5 py-0.5 text-[10px]">
-                        <Flag country={pick.country} size="sm" /> {pick.country}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      ) : null}
     </div>
   );
 }

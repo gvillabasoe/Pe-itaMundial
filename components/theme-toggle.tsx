@@ -2,24 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import { useTheme } from "@/components/theme-provider";
+import { useTheme } from "./theme-provider";
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
-  useEffect(() => setMounted(true), []);
+  if (!mounted) {
+    return <span className="theme-toggle" aria-hidden="true"><span style={{ width: 16, height: 16 }} /></span>;
+  }
 
   return (
     <button
       type="button"
-      aria-label="Cambiar tema"
       className="theme-toggle"
       onClick={toggleTheme}
+      aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+      title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
     >
-      <span className="theme-toggle__inner">
-        {!mounted ? <span className="theme-toggle__placeholder" /> : theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
-      </span>
+      {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
     </button>
   );
 }
