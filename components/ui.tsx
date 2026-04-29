@@ -1,100 +1,99 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Image from "next/image";
-import { GROUP_COLORS } from "@/lib/data";
-import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { getFlagPath } from "@/lib/flags";
+import { GROUP_COLORS } from "@/lib/data";
 
-// ⚠️ NO TOCAR — estructura de banderas conservada exactamente como estaba.
-// Mapa de emojis Unicode + excepción de Inglaterra como imagen PNG.
+// ════════════════════════════════════════════════════════════════
+// ⚠️  ESTRUCTURA DE BANDERAS — CONSERVADA EXACTAMENTE COMO ESTABA
+// ════════════════════════════════════════════════════════════════
+// Flag usa getFlagPath() para servir PNG desde /public/flags con
+// fallback a iniciales. NO tocar.
 
-const FLAG_EMOJI: Record<string, string> = {
-  "México": "🇲🇽", "Sudáfrica": "🇿🇦", "Corea del Sur": "🇰🇷", "Chequia": "🇨🇿",
-  "Canadá": "🇨🇦", "Bosnia y Herzegovina": "🇧🇦", "Catar": "🇶🇦", "Suiza": "🇨🇭",
-  "Brasil": "🇧🇷", "Marruecos": "🇲🇦", "Haití": "🇭🇹", "Escocia": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
-  "Estados Unidos": "🇺🇸", "Paraguay": "🇵🇾", "Australia": "🇦🇺", "Turquía": "🇹🇷",
-  "Alemania": "🇩🇪", "Curazao": "🇨🇼", "Costa de Marfil": "🇨🇮", "Ecuador": "🇪🇨",
-  "Países Bajos": "🇳🇱", "Japón": "🇯🇵", "Suecia": "🇸🇪", "Túnez": "🇹🇳",
-  "Bélgica": "🇧🇪", "Egipto": "🇪🇬", "Irán": "🇮🇷", "Nueva Zelanda": "🇳🇿",
-  "España": "🇪🇸", "Cabo Verde": "🇨🇻", "Arabia Saudí": "🇸🇦", "Uruguay": "🇺🇾",
-  "Francia": "🇫🇷", "Senegal": "🇸🇳", "Irak": "🇮🇶", "Noruega": "🇳🇴",
-  "Argentina": "🇦🇷", "Argelia": "🇩🇿", "Austria": "🇦🇹", "Jordania": "🇯🇴",
-  "Portugal": "🇵🇹", "RD Congo": "🇨🇩", "Uzbekistán": "🇺🇿", "Colombia": "🇨🇴",
-  "Inglaterra": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Croacia": "🇭🇷", "Ghana": "🇬🇭", "Panamá": "🇵🇦",
-};
+const FLAG_SIZES = { sm: 18, md: 22, lg: 30 } as const;
 
-const EMOJI_SIZES: Record<string, string> = {
-  sm: "text-base leading-none",
-  md: "text-xl leading-none",
-  lg: "text-[28px] leading-none",
-};
+function getFlagFallbackLabel(country: string) {
+  const letters = country
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((chunk) => chunk[0]?.toUpperCase() || "")
+    .join("");
 
-const IMG_SIZES = { sm: 20, md: 28, lg: 36 };
+  return letters || country.slice(0, 2).toUpperCase() || "--";
+}
 
 export function Flag({ country, size = "md", className = "" }: { country: string; size?: "sm" | "md" | "lg"; className?: string }) {
-  // ⚠️ Inglaterra → PNG (única excepción) — NO tocar
-  if (country === "Inglaterra") {
-    const px = IMG_SIZES[size];
+  const flagPath = getFlagPath(country);
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [country, flagPath]);
+
+  const px = FLAG_SIZES[size];
+
+  if (flagPath && !imgError) {
     return (
       <Image
-        src="/flags/Inglaterra.png"
-        alt="Inglaterra"
+        src={flagPath}
+        alt={country}
         width={px}
         height={Math.round(px * 0.67)}
-        className={`rounded-[3px] object-cover ${className}`}
+        className={`rounded-[4px] border object-cover shadow-[0_4px_10px_rgba(var(--shadow-color),0.12)] ${className}`}
+        style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.05)" }}
+        onError={() => setImgError(true)}
       />
     );
   }
 
-  const emoji = FLAG_EMOJI[country];
-  if (emoji) {
-    return (
-      <span className={`${EMOJI_SIZES[size]} ${className}`} role="img" aria-label={country}>
-        {emoji}
-      </span>
-    );
-  }
+  const fontSize = size === "sm" ? "text-[9px]" : size === "lg" ? "text-[11px]" : "text-[10px]";
+  const fallbackLabel = getFlagFallbackLabel(country);
 
-  const px = IMG_SIZES[size];
   return (
     <span
-      className={`inline-flex items-center justify-center rounded text-[9px] ${className}`}
-      style={{
-        width: px,
-        height: Math.round(px * 0.67),
-        background: "rgb(var(--bg-muted))",
-        color: "rgb(var(--text-muted))",
-      }}
+      className={`inline-flex items-center justify-center rounded-[6px] border px-1.5 py-0.5 font-bold uppercase tracking-[0.12em] leading-none shadow-[0_4px_10px_rgba(var(--shadow-color),0.08)] ${fontSize} ${className}`}
+      style={{ borderColor: "rgba(var(--divider),0.1)", background: "rgba(var(--surface-soft),0.06)", minWidth: px, minHeight: Math.round(px * 0.67) }}
       aria-label={country}
+      title={country}
     >
-      ?
+      {fallbackLabel}
     </span>
   );
 }
 
-export function CountryWithFlag({ country, size = "sm", className = "" }: { country: string; size?: "sm" | "md"; className?: string }) {
+// ─── CountryWithFlag ──────────────────────────────────
+
+export function CountryWithFlag({ country, size = "sm" }: { country: string; size?: "sm" | "md" }) {
   if (!country) return null;
   return (
-    <span className={`inline-flex items-center gap-1 ${className}`}>
+    <span className="inline-flex items-center gap-1.5 align-middle">
       <Flag country={country} size={size} />
       <span>{country}</span>
     </span>
   );
 }
 
+// ─── GroupBadge ───────────────────────────────────────
+
 export function GroupBadge({ group }: { group: string }) {
-  const color = GROUP_COLORS[group] ?? "#7B879C";
+  const color = GROUP_COLORS[group] || "#98A3B8";
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest uppercase"
-      style={{ background: `${color}22`, color, border: `1px solid ${color}40` }}
+      className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      style={{ background: `${color}1F`, color, borderColor: `${color}38` }}
     >
       Grupo {group}
     </span>
   );
 }
 
-export function SectionTitle({ children, accent, icon: Icon, right }: { children: React.ReactNode; accent?: string; icon?: LucideIcon; right?: React.ReactNode }) {
+// ─── SectionTitle ─────────────────────────────────────
+
+export function SectionTitle({ children, accent, icon: Icon, right }: { children: ReactNode; accent?: string; icon?: LucideIcon; right?: ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
@@ -106,6 +105,8 @@ export function SectionTitle({ children, accent, icon: Icon, right }: { children
   );
 }
 
+// ─── EmptyState ───────────────────────────────────────
+
 export function EmptyState({ text, icon: Icon }: { text: string; icon?: LucideIcon }) {
   return (
     <div className="card text-center py-10">
@@ -115,11 +116,122 @@ export function EmptyState({ text, icon: Icon }: { text: string; icon?: LucideIc
   );
 }
 
+// ─── DemoBadge ────────────────────────────────────────
+
 export function DemoBadge() {
   return <span className="badge badge-muted text-[9px]">Demo</span>;
 }
 
-// ─── Pick chip (Phase 3 nuevo) ─────────────────────
+// ────────────────────────────────────────────────────────────────
+// CountrySelectionPreview — re-export para compatibilidad con
+// admin/page.tsx y mi-porra-builder.tsx. Renderiza una lista
+// horizontal de banderas + nombre con label opcional.
+// ────────────────────────────────────────────────────────────────
+
+interface CountrySelectionPreviewProps {
+  countries: Array<string | null | undefined>;
+  label?: string;
+  emptyText?: string;
+  size?: "sm" | "md";
+  showRank?: boolean;
+  className?: string;
+}
+
+export function CountrySelectionPreview({
+  countries,
+  label,
+  emptyText = "Sin selección",
+  size = "sm",
+  showRank = false,
+  className = "",
+}: CountrySelectionPreviewProps) {
+  const valid = countries.filter((c): c is string => Boolean(c && String(c).trim()));
+
+  if (valid.length === 0) {
+    return (
+      <div className={`flex items-center gap-2 text-[11px] text-text-muted ${className}`}>
+        {label ? <span className="font-semibold uppercase tracking-wider text-[9px]">{label}:</span> : null}
+        <span>{emptyText}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
+      {label ? (
+        <span className="font-semibold uppercase tracking-wider text-[9px] text-text-muted">{label}:</span>
+      ) : null}
+      {valid.map((country, index) => (
+        <span
+          key={`${country}-${index}`}
+          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
+          style={{
+            borderColor: "rgb(var(--border-subtle))",
+            background: "rgb(var(--bg-elevated))",
+            color: "rgb(var(--text-secondary))",
+          }}
+        >
+          {showRank ? (
+            <span className="font-bold text-text-muted">{index + 1}.</span>
+          ) : null}
+          <Flag country={country} size={size} />
+          <span className="font-medium">{country}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// MatchupWithFlags — re-export para compatibilidad con app/page.tsx
+// Renderiza dos selecciones enfrentadas con un separador "vs".
+// ────────────────────────────────────────────────────────────────
+
+interface MatchupWithFlagsProps {
+  homeTeam: string;
+  awayTeam: string;
+  size?: "sm" | "md" | "lg";
+  separator?: string;
+  highlight?: "home" | "away" | null;
+  className?: string;
+}
+
+export function MatchupWithFlags({
+  homeTeam,
+  awayTeam,
+  size = "sm",
+  separator = "vs",
+  highlight = null,
+  className = "",
+}: MatchupWithFlagsProps) {
+  return (
+    <div className={`flex items-center justify-center gap-2 ${className}`}>
+      <span
+        className={`inline-flex items-center gap-1 ${
+          highlight === "home" ? "font-semibold text-text-warm" : ""
+        }`}
+      >
+        <Flag country={homeTeam} size={size} />
+        <span className="text-xs">{homeTeam}</span>
+      </span>
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">
+        {separator}
+      </span>
+      <span
+        className={`inline-flex items-center gap-1 ${
+          highlight === "away" ? "font-semibold text-text-warm" : ""
+        }`}
+      >
+        <span className="text-xs">{awayTeam}</span>
+        <Flag country={awayTeam} size={size} />
+      </span>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Phase 3 — Componentes nuevos para UI premium light-first
+// ────────────────────────────────────────────────────────────────
 
 export type PickStatus = "correct" | "sign" | "wrong" | "pending";
 
@@ -139,8 +251,6 @@ export function PickChip({ status, points, className = "" }: { status: PickStatu
   );
 }
 
-// ─── Skeleton ──────────────────────────────────────
-
 export function Skeleton({ className = "", style }: { className?: string; style?: React.CSSProperties }) {
   return <div className={`skeleton ${className}`} style={style} aria-hidden="true" />;
 }
@@ -155,8 +265,6 @@ export function SkeletonText({ lines = 1, className = "" }: { lines?: number; cl
   );
 }
 
-// ─── Initials Avatar ───────────────────────────────
-
 export function InitialsAvatar({ name, size = 32 }: { name: string; size?: number }) {
   const initials = name
     .split(/\s+/)
@@ -165,6 +273,7 @@ export function InitialsAvatar({ name, size = 32 }: { name: string; size?: numbe
     .map((p) => p[0]?.toUpperCase() || "")
     .join("") || "?";
 
+  // Color determinístico desde el nombre — consistente entre renders
   const hash = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0);
   const hue = hash % 360;
   const bg = `hsl(${hue}, 45%, 92%)`;
@@ -188,8 +297,6 @@ export function InitialsAvatar({ name, size = 32 }: { name: string; size?: numbe
   );
 }
 
-// ─── Medal ─────────────────────────────────────────
-
 export function Medal({ rank, size = 18 }: { rank: number; size?: number }) {
   if (rank > 3 || rank < 1) return null;
   const emoji = rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉";
@@ -200,7 +307,7 @@ export function Medal({ rank, size = 18 }: { rank: number; size?: number }) {
   );
 }
 
-// ─── Countdown ─────────────────────────────────────
+// ─── Countdown ────────────────────────────────────────
 
 export function Countdown({ target }: { target: string }) {
   const [diff, setDiff] = useState({ d: 0, h: 0, m: 0, s: 0 });
