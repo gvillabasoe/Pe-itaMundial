@@ -212,23 +212,45 @@ export function CountrySelectionPreview({
 // Renderiza dos selecciones enfrentadas con un separador "vs".
 // ────────────────────────────────────────────────────────────────
 
+// MatchupWithFlags soporta DOS convenciones de naming según el call site:
+//
+//   <MatchupWithFlags homeCountry="México" awayCountry="Sudáfrica" textClassName="..." />
+//   <MatchupWithFlags homeTeam="México" awayTeam="Sudáfrica" />
+//
+// Acepta ambas para no romper ningún archivo del repo.
+
 interface MatchupWithFlagsProps {
-  homeTeam: string;
-  awayTeam: string;
+  /** Nombre del equipo local (alias usado en app/page.tsx). */
+  homeCountry?: string;
+  /** Nombre del equipo visitante (alias usado en app/page.tsx). */
+  awayCountry?: string;
+  /** Nombre del equipo local (alias alternativo). */
+  homeTeam?: string;
+  /** Nombre del equipo visitante (alias alternativo). */
+  awayTeam?: string;
   size?: "sm" | "md" | "lg";
   separator?: string;
   highlight?: "home" | "away" | null;
   className?: string;
+  /** Clase aplicada al texto del nombre de cada equipo. */
+  textClassName?: string;
 }
 
 export function MatchupWithFlags({
+  homeCountry,
+  awayCountry,
   homeTeam,
   awayTeam,
   size = "sm",
   separator = "vs",
   highlight = null,
   className = "",
+  textClassName = "text-xs",
 }: MatchupWithFlagsProps) {
+  // Normalizar: aceptar cualquiera de los dos pares de nombres
+  const home = homeCountry ?? homeTeam ?? "";
+  const away = awayCountry ?? awayTeam ?? "";
+
   return (
     <div className={`flex items-center justify-center gap-2 ${className}`}>
       <span
@@ -236,8 +258,8 @@ export function MatchupWithFlags({
           highlight === "home" ? "font-semibold text-text-warm" : ""
         }`}
       >
-        <Flag country={homeTeam} size={size} />
-        <span className="text-xs">{homeTeam}</span>
+        <Flag country={home} size={size} />
+        <span className={textClassName}>{home}</span>
       </span>
       <span className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">
         {separator}
@@ -247,8 +269,8 @@ export function MatchupWithFlags({
           highlight === "away" ? "font-semibold text-text-warm" : ""
         }`}
       >
-        <span className="text-xs">{awayTeam}</span>
-        <Flag country={awayTeam} size={size} />
+        <span className={textClassName}>{away}</span>
+        <Flag country={away} size={size} />
       </span>
     </div>
   );
