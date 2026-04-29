@@ -124,34 +124,59 @@ export function DemoBadge() {
 
 // ────────────────────────────────────────────────────────────────
 // CountrySelectionPreview — re-export para compatibilidad con
-// admin/page.tsx y mi-porra-builder.tsx. Renderiza una lista
-// horizontal de banderas + nombre con label opcional.
+// admin/page.tsx, mi-porra-builder.tsx y otros consumidores.
+//
+// Soporta DOS firmas distintas que hay en el código existente:
+//
+//   <CountrySelectionPreview country={team} emptyLabel="..." />
+//   <CountrySelectionPreview countries={[...]} label="..." emptyText="..." />
+//
+// Acepta ambas para no romper ningún call site.
 // ────────────────────────────────────────────────────────────────
 
 interface CountrySelectionPreviewProps {
-  countries: Array<string | null | undefined>;
+  /** Una sola selección (string). Mutuamente excluyente con `countries`. */
+  country?: string | null;
+  /** Lista de selecciones. Mutuamente excluyente con `country`. */
+  countries?: Array<string | null | undefined>;
+  /** Label/encabezado opcional. */
   label?: string;
+  /** Texto cuando no hay selección. Sinónimo de `emptyLabel`. */
   emptyText?: string;
+  /** Texto cuando no hay selección (alias usado en admin/page.tsx). */
+  emptyLabel?: string;
   size?: "sm" | "md";
   showRank?: boolean;
   className?: string;
 }
 
 export function CountrySelectionPreview({
+  country,
   countries,
   label,
-  emptyText = "Sin selección",
+  emptyText,
+  emptyLabel,
   size = "sm",
   showRank = false,
   className = "",
 }: CountrySelectionPreviewProps) {
-  const valid = countries.filter((c): c is string => Boolean(c && String(c).trim()));
+  // Normalizar la entrada: country (singular) o countries (array) → array
+  const inputList: Array<string | null | undefined> = countries
+    ? countries
+    : country !== undefined
+    ? [country]
+    : [];
+
+  const valid = inputList.filter((c): c is string => Boolean(c && String(c).trim()));
+  const fallback = emptyLabel ?? emptyText ?? "Sin selección";
 
   if (valid.length === 0) {
     return (
       <div className={`flex items-center gap-2 text-[11px] text-text-muted ${className}`}>
-        {label ? <span className="font-semibold uppercase tracking-wider text-[9px]">{label}:</span> : null}
-        <span>{emptyText}</span>
+        {label ? (
+          <span className="font-semibold uppercase tracking-wider text-[9px]">{label}:</span>
+        ) : null}
+        <span>{fallback}</span>
       </div>
     );
   }
@@ -159,11 +184,13 @@ export function CountrySelectionPreview({
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       {label ? (
-        <span className="font-semibold uppercase tracking-wider text-[9px] text-text-muted">{label}:</span>
+        <span className="font-semibold uppercase tracking-wider text-[9px] text-text-muted">
+          {label}:
+        </span>
       ) : null}
-      {valid.map((country, index) => (
+      {valid.map((c, index) => (
         <span
-          key={`${country}-${index}`}
+          key={`${c}-${index}`}
           className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
           style={{
             borderColor: "rgb(var(--border-subtle))",
@@ -171,11 +198,9 @@ export function CountrySelectionPreview({
             color: "rgb(var(--text-secondary))",
           }}
         >
-          {showRank ? (
-            <span className="font-bold text-text-muted">{index + 1}.</span>
-          ) : null}
-          <Flag country={country} size={size} />
-          <span className="font-medium">{country}</span>
+          {showRank ? <span className="font-bold text-text-muted">{index + 1}.</span> : null}
+          <Flag country={c} size={size} />
+          <span className="font-medium">{c}</span>
         </span>
       ))}
     </div>
