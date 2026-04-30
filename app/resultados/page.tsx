@@ -387,7 +387,7 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
           <span className="text-[10px] font-mono text-text-faint">#{match.id}</span>
           {match.group && <GroupBadge group={match.group} />}
           <span className={getStatusBadgeClass(match.statusShort)}>
-            {getStatusDisplay(match.statusShort, match.minute)}
+            {getStatusDisplay(match.statusShort, { elapsed: match.minute, kickoff: match.kickoff })}
           </span>
         </div>
         <span
