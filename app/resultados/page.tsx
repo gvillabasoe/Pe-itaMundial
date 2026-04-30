@@ -281,16 +281,24 @@ export default function ResultadosPage() {
         <button className={`pill ${zoneFilter === "all" ? "active" : ""}`} onClick={() => { setZoneFilter("all"); setCityFilter("all"); }}>
           Todas
         </button>
-        {(Object.keys(REGION_PALETTES) as Zone[]).map((z) => (
-          <button
-            key={z}
-            className={`pill ${zoneFilter === z ? "active" : ""}`}
-            onClick={() => { setZoneFilter(z); setCityFilter("all"); }}
-            style={zoneFilter === z ? { background: REGION_PALETTES[z].bg, color: REGION_PALETTES[z].fg, borderColor: REGION_PALETTES[z].fg } : undefined}
-          >
-            {REGION_LABELS[z]}
-          </button>
-        ))}
+        {(Object.keys(REGION_PALETTES) as Zone[]).map((z) => {
+          const palette = REGION_PALETTES[z] as { primary?: string };
+          const accent = palette?.primary;
+          return (
+            <button
+              key={z}
+              className={`pill ${zoneFilter === z ? "active" : ""}`}
+              onClick={() => { setZoneFilter(z); setCityFilter("all"); }}
+              style={
+                zoneFilter === z && accent
+                  ? { background: `${accent}22`, color: accent, borderColor: accent }
+                  : undefined
+              }
+            >
+              {REGION_LABELS[z]}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
