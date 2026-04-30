@@ -106,12 +106,26 @@ export function SectionTitle({ children, accent, icon: Icon, right }: { children
 }
 
 // ─── EmptyState ───────────────────────────────────────
+// Acepta title, text, icon y action — el call site de
+// app/probabilidades/page.tsx usa los cuatro.
 
-export function EmptyState({ text, icon: Icon }: { text: string; icon?: LucideIcon }) {
+interface EmptyStateProps {
+  text: string;
+  title?: string;
+  icon?: LucideIcon;
+  action?: ReactNode;
+  className?: string;
+}
+
+export function EmptyState({ text, title, icon: Icon, action, className = "" }: EmptyStateProps) {
   return (
-    <div className="card text-center py-10">
+    <div className={`card text-center py-10 ${className}`}>
       {Icon && <Icon size={28} className="mx-auto mb-2.5 text-text-faint" />}
+      {title ? (
+        <p className="font-display text-base font-bold text-text-warm mb-1">{title}</p>
+      ) : null}
       <p className="text-sm text-text-muted">{text}</p>
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
 }
