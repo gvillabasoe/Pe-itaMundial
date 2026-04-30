@@ -66,13 +66,25 @@ export function Flag({ country, size = "md", className = "" }: { country: string
 }
 
 // ─── CountryWithFlag ──────────────────────────────────
+// Acepta size sm/md/lg y textClassName para custom typography
+// (call site en app/probabilidades/page.tsx usa size="lg" + textClassName).
 
-export function CountryWithFlag({ country, size = "sm" }: { country: string; size?: "sm" | "md" }) {
+export function CountryWithFlag({
+  country,
+  size = "sm",
+  textClassName,
+  className = "",
+}: {
+  country: string;
+  size?: "sm" | "md" | "lg";
+  textClassName?: string;
+  className?: string;
+}) {
   if (!country) return null;
   return (
-    <span className="inline-flex items-center gap-1.5 align-middle">
+    <span className={`inline-flex items-center gap-1.5 align-middle ${className}`}>
       <Flag country={country} size={size} />
-      <span>{country}</span>
+      <span className={textClassName}>{country}</span>
     </span>
   );
 }
@@ -159,7 +171,7 @@ interface CountrySelectionPreviewProps {
   emptyText?: string;
   /** Texto cuando no hay selección (alias usado en admin/page.tsx). */
   emptyLabel?: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   showRank?: boolean;
   className?: string;
 }
