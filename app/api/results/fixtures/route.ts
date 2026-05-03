@@ -1,299 +1,174 @@
 import { NextResponse } from "next/server";
-import { normalizeName } from "@/lib/data";
-import { normalizeCity } from "@/lib/config/regions";
-import type { MatchStage } from "@/lib/worldcup/schedule";
+import { WORLD_CUP_MATCHES, type MatchStage } from "@/lib/worldcup/schedule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// ════════════════════════════════════════════════════════════
+// API de resultados — proxy a API-Football con fallback robusto
+// al calendario oficial. Siempre devuelve 200 con shape consistente,
+// los errores se reportan en el campo `connection: "error"` + `error`.
+// ════════════════════════════════════════════════════════════
+
+const API_TIMEOUT_MS = 10_000;
 const API_BASE = "https://v3.football.api-sports.io";
-const WORLD_CUP_LEAGUE_ID = 1;
-const WORLD_CUP_SEASON = 2026;
-const LIVE_STATUS_FILTER = "1H-HT-2H-ET-P-BT-LIVE";
-const LIVE_BATCH_SIZE = 20;
-const API_TIMEOUT_MS = 10000;
+const WORLD_CUP_LEAGUE_ID = 1; // FIFA World Cup
+const SEASON = 2026;
 
-interface RawApiFixture {
-  fixture?: {
-    id?: number;
-    date?: string;
-    status?: {
-      short?: string;
-      elapsed?: number | null;
-    };
-    venue?: {
-      city?: string | null;
-    };
-  };
-  league?: {
-    round?: string;
-  };
-  teams?: {
-    home?: { name?: string };
-    away?: { name?: string };
-  };
-  goals?: {
-    home?: number | null;
-    away?: number | null;
-  };
-}
-
-interface RawCoveragePayload {
-  response?: Array<{
-    seasons?: Array<{
-      coverage?: {
-        fixtures?: {
-          events?: boolean;
-          lineups?: boolean;
-          statistics_fixtures?: boolean;
-          statistics_players?: boolean;
-        };
-      };
-    }>;
-  }>;
-}
-
-export interface ApiFixtureItem {
+interface ApiFixtureItem {
   apiId: number | null;
   stage: MatchStage;
   roundLabel: string;
-  competitionLabel?: string | null;
+  competitionLabel: string | null;
   homeTeam: string;
   awayTeam: string;
-  kickoff: string;
+  kickoff: string; // ISO 8601 UTC
   minute: number | null;
   statusShort: string;
   city: string | null;
   score: { home: number | null; away: number | null };
 }
 
+interface ResultsApiPayload {
+  source: "api-football" | "calendar";
+  connection: "live" | "calendar" | "error";
+  updatedAt: string;
+  fixtures: ApiFixtureItem[];
+  error?: string;
+}
+
+function jsonResponse(payload: ResultsApiPayload, status = 200) {
+  return NextResponse.json(payload, {
+    status,
+    headers: { "Cache-Control": "no-store, max-age=0" },
+  });
+}
+
+// Calendario oficial como fuente única de verdad cuando no hay API key
+// o la API no responde. Convierte WORLD_CUP_MATCHES al shape de respuesta.
+function buildCalendarFallback(): ApiFixtureItem[] {
+  return WORLD_CUP_MATCHES.map((match) => ({
+    apiId: null,
+    stage: match.stage,
+    roundLabel: match.roundLabel,
+    competitionLabel: null,
+    homeTeam: match.homeTeam,
+    awayTeam: match.awayTeam,
+    kickoff: match.kickoff,
+    minute: null,
+    statusShort: "NS",
+    city: match.hostCity ?? null,
+    score: { home: null, away: null },
+  }));
+}
+
 function mapRoundToStage(roundLabel: string): MatchStage {
-  const round = roundLabel.toLowerCase();
-  if (round.includes("semi")) return "semi-final";
-  if (round.includes("third") || round.includes("3rd")) return "third-place";
-  if (round.includes("quarter") || round.includes("1/4")) return "quarter-final";
-  if (round.includes("group")) return "group";
-  if (round.includes("1/16") || round.includes("round of 32") || round.includes("sixteenth")) return "round-of-32";
-  if (round.includes("1/8") || round.includes("round of 16") || round.includes("eighth")) return "round-of-16";
-  if (round.includes("final")) return "final";
+  const r = roundLabel.toLowerCase();
+  // IMPORTANTE: comprobar primero "round of 16" antes que "round of 32"
+  // para evitar falsos positivos por subcadenas.
+  if (r.includes("final") && !r.includes("semi") && !r.includes("quarter") && !r.includes("3rd") && !r.includes("third")) return "final";
+  if (r.includes("3rd") || r.includes("third place") || r.includes("tercer")) return "third-place";
+  if (r.includes("semi")) return "semi-final";
+  if (r.includes("quarter") || r.includes("1/4")) return "quarter-final";
+  if (r.includes("round of 16") || r.includes("1/8")) return "round-of-16";
+  if (r.includes("round of 32") || r.includes("1/16")) return "round-of-32";
   return "group";
 }
 
-function sortFixtures(fixtures: ApiFixtureItem[]) {
-  return [...fixtures].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
-}
-
-function getApiKey(): string | null {
-  return (
-    process.env.API_SPORTS_KEY ||
-    process.env.API_FOOTBALL_KEY ||
-    process.env.APISPORTS_KEY ||
-    process.env.X_APISPORTS_KEY ||
-    null
-  );
-}
-
-function extractResponseArray(payload: unknown): RawApiFixture[] {
-  return Array.isArray((payload as { response?: unknown[] } | null | undefined)?.response)
-    ? ((payload as { response?: RawApiFixture[] }).response || [])
-    : [];
-}
-
-async function fetchApiJson(path: string, apiKey: string) {
+// Llamada a API-Football con timeout. Devuelve null si no hay key o falla.
+async function fetchFromApiFootball(apiKey: string): Promise<ApiFixtureItem[] | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      headers: {
-        "x-apisports-key": apiKey,
-        accept: "application/json",
-      },
-      cache: "no-store",
-      signal: controller.signal,
-    });
+    const response = await fetch(
+      `${API_BASE}/fixtures?league=${WORLD_CUP_LEAGUE_ID}&season=${SEASON}`,
+      {
+        headers: {
+          "x-apisports-key": apiKey,
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+        cache: "no-store",
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(`API request failed with ${response.status}`);
+      throw new Error(`API-Football respondió ${response.status}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    const fixtures = Array.isArray(data?.response) ? data.response : [];
+
+    return fixtures.map((item: Record<string, unknown>): ApiFixtureItem => {
+      const fixture = (item.fixture || {}) as Record<string, unknown>;
+      const teams = (item.teams || {}) as Record<string, Record<string, unknown>>;
+      const goals = (item.goals || {}) as Record<string, unknown>;
+      const league = (item.league || {}) as Record<string, unknown>;
+      const status = (fixture.status || {}) as Record<string, unknown>;
+      const venue = (fixture.venue || {}) as Record<string, unknown>;
+
+      const home = teams.home || {};
+      const away = teams.away || {};
+
+      return {
+        apiId: typeof fixture.id === "number" ? fixture.id : null,
+        stage: mapRoundToStage(String(league.round || "")),
+        roundLabel: String(league.round || ""),
+        competitionLabel: typeof league.name === "string" ? league.name : null,
+        homeTeam: String(home.name || ""),
+        awayTeam: String(away.name || ""),
+        kickoff: String(fixture.date || ""),
+        minute: typeof status.elapsed === "number" ? status.elapsed : null,
+        statusShort: String(status.short || "NS"),
+        city: typeof venue.city === "string" ? venue.city : null,
+        score: {
+          home: typeof goals.home === "number" ? goals.home : null,
+          away: typeof goals.away === "number" ? goals.away : null,
+        },
+      };
+    });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("API request timeout");
-    }
-    throw error;
+    // eslint-disable-next-line no-console
+    console.error("[/api/results/fixtures] API-Football error:", error);
+    return null;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchCoverage(apiKey: string) {
-  const payload = (await fetchApiJson(
-    `/leagues?id=${WORLD_CUP_LEAGUE_ID}&season=${WORLD_CUP_SEASON}`,
-    apiKey
-  )) as RawCoveragePayload;
-
-  const season = payload.response?.[0]?.seasons?.find((entry) => Boolean(entry.coverage));
-  return season?.coverage || null;
-}
-
-function mapWorldCupFixture(item: RawApiFixture): ApiFixtureItem {
-  const fixture = item?.fixture;
-  const league = item?.league;
-  const teams = item?.teams;
-  const goals = item?.goals;
-  const status = fixture?.status;
-
-  const homeTeam = normalizeName((teams?.home?.name as string) || "");
-  const awayTeam = normalizeName((teams?.away?.name as string) || "");
-  const roundLabel = (league?.round as string) || "";
-
-  return {
-    apiId: typeof fixture?.id === "number" ? fixture.id : null,
-    stage: mapRoundToStage(roundLabel),
-    roundLabel,
-    competitionLabel: null,
-    homeTeam,
-    awayTeam,
-    kickoff: (fixture?.date as string) || new Date().toISOString(),
-    minute: typeof status?.elapsed === "number" ? status.elapsed : null,
-    statusShort: (status?.short as string) || "NS",
-    city: normalizeCity((fixture?.venue?.city as string) || null),
-    score: {
-      home: typeof goals?.home === "number" ? goals.home : null,
-      away: typeof goals?.away === "number" ? goals.away : null,
-    },
-  };
-}
-
-function buildCalendarPayload(connection: "calendar" | "error", error?: string) {
-  return {
-    source: "calendar",
-    connection,
-    updatedAt: new Date().toISOString(),
-    fixtures: [] as ApiFixtureItem[],
-    ...(error ? { error } : {}),
-  };
-}
-
-function chunkIds(ids: number[], size: number) {
-  const chunks: number[][] = [];
-  for (let index = 0; index < ids.length; index += size) {
-    chunks.push(ids.slice(index, index + size));
-  }
-  return chunks;
-}
-
-async function fetchWorldCupSchedule(apiKey: string): Promise<ApiFixtureItem[]> {
-  const payload = await fetchApiJson(`/fixtures?league=${WORLD_CUP_LEAGUE_ID}&season=${WORLD_CUP_SEASON}`, apiKey);
-  return extractResponseArray(payload).map(mapWorldCupFixture);
-}
-
-async function fetchLiveWorldCupFixtures(apiKey: string, canUseBatchDetails: boolean): Promise<ApiFixtureItem[]> {
-  const payload = await fetchApiJson(
-    `/fixtures?league=${WORLD_CUP_LEAGUE_ID}&season=${WORLD_CUP_SEASON}&status=${LIVE_STATUS_FILTER}`,
-    apiKey
-  );
-
-  const liveList = extractResponseArray(payload).map(mapWorldCupFixture);
-  const liveIds = liveList
-    .map((item) => item.apiId)
-    .filter((value): value is number => typeof value === "number");
-
-  if (liveIds.length === 0) {
-    return [];
-  }
-
-  if (!canUseBatchDetails) {
-    return liveList;
-  }
-
-  const detailPayloads = await Promise.all(
-    chunkIds(liveIds, LIVE_BATCH_SIZE).map((batch) => fetchApiJson(`/fixtures?ids=${batch.join("-")}`, apiKey))
-  );
-
-  return detailPayloads.flatMap((detailPayload) => extractResponseArray(detailPayload).map(mapWorldCupFixture));
-}
-
-function mergeScheduleWithLive(schedule: ApiFixtureItem[], liveFixtures: ApiFixtureItem[]) {
-  if (liveFixtures.length === 0) return schedule;
-
-  const liveByApiId = new Map<number, ApiFixtureItem>();
-  liveFixtures.forEach((fixture) => {
-    if (typeof fixture.apiId === "number") {
-      liveByApiId.set(fixture.apiId, fixture);
-    }
-  });
-
-  return schedule.map((fixture) => {
-    if (typeof fixture.apiId !== "number") return fixture;
-    return liveByApiId.get(fixture.apiId) || fixture;
-  });
-}
-
 export async function GET() {
-  const apiKey = getApiKey();
+  const apiKey = process.env.API_FOOTBALL_KEY || process.env.API_SPORTS_KEY;
+  const updatedAt = new Date().toISOString();
 
+  // Sin API key → devolvemos directamente el calendario oficial
   if (!apiKey) {
-    return NextResponse.json(buildCalendarPayload("calendar"), {
-      headers: { "Cache-Control": "no-store, max-age=0" },
+    return jsonResponse({
+      source: "calendar",
+      connection: "calendar",
+      updatedAt,
+      fixtures: buildCalendarFallback(),
     });
   }
 
-  const errors: string[] = [];
+  // Con API key → intentamos la API y caemos al calendario si falla
+  const apiFixtures = await fetchFromApiFootball(apiKey);
 
-  let coverage: Awaited<ReturnType<typeof fetchCoverage>> = null;
-  try {
-    coverage = await fetchCoverage(apiKey);
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : "World Cup coverage API error");
-  }
-
-  let scheduleFixtures: ApiFixtureItem[] = [];
-  try {
-    scheduleFixtures = await fetchWorldCupSchedule(apiKey);
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : "World Cup schedule API error");
-  }
-
-  let liveFixtures: ApiFixtureItem[] = [];
-  if (scheduleFixtures.length > 0) {
-    try {
-      const canUseBatchDetails = Boolean(
-        coverage?.fixtures?.events ||
-          coverage?.fixtures?.lineups ||
-          coverage?.fixtures?.statistics_fixtures ||
-          coverage?.fixtures?.statistics_players
-      );
-      liveFixtures = await fetchLiveWorldCupFixtures(apiKey, canUseBatchDetails);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : "Live World Cup API error");
-    }
-  }
-
-  if (scheduleFixtures.length > 0) {
-    return NextResponse.json(
-      {
-        source: "api-football",
-        connection: "live",
-        updatedAt: new Date().toISOString(),
-        fixtures: sortFixtures(mergeScheduleWithLive(scheduleFixtures, liveFixtures)),
-        ...(errors.length ? { error: errors.join(" | ") } : {}),
-      },
-      { headers: { "Cache-Control": "no-store, max-age=0" } }
-    );
-  }
-
-  if (errors.length > 0) {
-    return NextResponse.json(buildCalendarPayload("error", errors.join(" | ")), {
-      status: 500,
-      headers: { "Cache-Control": "no-store, max-age=0" },
+  if (!apiFixtures || apiFixtures.length === 0) {
+    return jsonResponse({
+      source: "calendar",
+      connection: "error",
+      updatedAt,
+      fixtures: buildCalendarFallback(),
+      error: "No se han podido obtener datos en vivo. Mostrando calendario oficial.",
     });
   }
 
-  return NextResponse.json(buildCalendarPayload("calendar"), {
-    headers: { "Cache-Control": "no-store, max-age=0" },
+  return jsonResponse({
+    source: "api-football",
+    connection: "live",
+    updatedAt,
+    fixtures: apiFixtures,
   });
 }
