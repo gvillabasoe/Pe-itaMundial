@@ -36,6 +36,14 @@ export function getDb() {
   return globalThis.__penitaPgPool__;
 }
 
+export function getDbPool(): Pool | null {
+  if (!process.env.DATABASE_URL?.trim()) {
+    return null;
+  }
+
+  return getDb();
+}
+
 export async function queryDb<Row extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: readonly unknown[]
