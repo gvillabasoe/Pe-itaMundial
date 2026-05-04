@@ -18,12 +18,24 @@ export const REGION_LABELS: Record<Zone, string> = {
   east: "Este",
 };
 
+// ════════════════════════════════════════════════════════════
+// Mapping de sede (display name) → región
+//
+// Cambios respecto a la versión anterior:
+//   - "Ciudad de México"        → "CDMX"
+//   - "Nueva York/Nueva Jersey" → "NY/NJ"
+//
+// Los aliases largos siguen aceptándose en CITY_NORMALIZATION para
+// compatibilidad: la API-Football y otros datos antiguos pueden
+// llegar con los nombres largos, los normalizamos al short.
+// ════════════════════════════════════════════════════════════
+
 export const REGION_BY_CITY: Record<string, Zone> = {
   Vancouver: "west",
   Seattle: "west",
   "San Francisco": "west",
   "Los Ángeles": "west",
-  "Ciudad de México": "central",
+  CDMX: "central",
   Monterrey: "central",
   Guadalajara: "central",
   Houston: "central",
@@ -33,11 +45,12 @@ export const REGION_BY_CITY: Record<string, Zone> = {
   Boston: "east",
   Filadelfia: "east",
   Miami: "east",
-  "Nueva York/Nueva Jersey": "east",
+  "NY/NJ": "east",
   Atlanta: "east",
 };
 
 const CITY_NORMALIZATION: Record<string, string> = {
+  // Oeste
   Vancouver: "Vancouver",
   Seattle: "Seattle",
   "San Francisco": "San Francisco",
@@ -45,14 +58,19 @@ const CITY_NORMALIZATION: Record<string, string> = {
   "Los Angeles": "Los Ángeles",
   "Los Ángeles": "Los Ángeles",
   Inglewood: "Los Ángeles",
-  "Mexico City": "Ciudad de México",
-  "Ciudad de México": "Ciudad de México",
+
+  // Centro — alias de Ciudad de México mapean a "CDMX"
+  "Mexico City": "CDMX",
+  "Ciudad de México": "CDMX",
+  CDMX: "CDMX",
   Monterrey: "Monterrey",
   Guadalajara: "Guadalajara",
   Houston: "Houston",
   Dallas: "Dallas",
   Arlington: "Dallas",
   "Kansas City": "Kansas City",
+
+  // Este — alias de Nueva York / Nueva Jersey mapean a "NY/NJ"
   Toronto: "Toronto",
   Boston: "Boston",
   Foxborough: "Boston",
@@ -60,10 +78,11 @@ const CITY_NORMALIZATION: Record<string, string> = {
   Filadelfia: "Filadelfia",
   Miami: "Miami",
   "Miami Gardens": "Miami",
-  "New York": "Nueva York/Nueva Jersey",
-  "New Jersey": "Nueva York/Nueva Jersey",
-  "East Rutherford": "Nueva York/Nueva Jersey",
-  "Nueva York/Nueva Jersey": "Nueva York/Nueva Jersey",
+  "New York": "NY/NJ",
+  "New Jersey": "NY/NJ",
+  "East Rutherford": "NY/NJ",
+  "Nueva York/Nueva Jersey": "NY/NJ",
+  "NY/NJ": "NY/NJ",
   Atlanta: "Atlanta",
 };
 

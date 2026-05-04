@@ -28,8 +28,21 @@ import { useScoredParticipants } from "@/lib/use-scored-participants";
 import { useToast } from "@/components/toast-provider";
 
 export default function MiClubPage() {
-  const { user, login, logout, favorites, toggleFavorite } = useAuth();
-  if (!user) return <LoginView onLogin={login} />;
+  const { user, loginAsync, logout, favorites, toggleFavorite, isHydrating } = useAuth();
+  // Mientras se hidrata el usuario desde localStorage al cargar, no parpadea
+  // el login: solo mostrar el formulario si confirmamos que no hay sesión.
+  if (isHydrating) {
+    return (
+      <div className="flex min-h-[80vh] items-center justify-center px-4">
+        <div className="card-elevated rounded-3xl w-full max-w-[380px] !p-8 text-center">
+          <Skeleton className="mx-auto mb-3" style={{ width: 56, height: 56, borderRadius: 16 }} />
+          <Skeleton className="mx-auto mb-2" style={{ width: 140, height: 22 }} />
+          <Skeleton className="mx-auto" style={{ width: 200, height: 12 }} />
+        </div>
+      </div>
+    );
+  }
+  if (!user) return <LoginView onLogin={loginAsync} />;
   return (
     <AuthenticatedMiClub
       user={user}
@@ -148,7 +161,7 @@ function LoadingState() {
 function LoginView({
   onLogin,
 }: {
-  onLogin: (username: string, password: string) => boolean;
+  onLogin: (username: string, password: string) => Promise<boolean>;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -156,17 +169,21 @@ function LoginView({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handle = () => {
-    if (!username || !password) {
+  const handle = async () => {
+    if (!username.trim() || !password) {
       setError("Completa los campos");
       return;
     }
     setLoading(true);
     setError("");
-    window.setTimeout(() => {
-      if (!onLogin(username, password)) setError("Credenciales incorrectas");
+    try {
+      const ok = await onLogin(username.trim(), password);
+      if (!ok) setError("Usuario o contraseña incorrectos");
+    } catch {
+      setError("No se ha podido conectar. Inténtalo de nuevo.");
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (

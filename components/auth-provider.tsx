@@ -1,23 +1,57 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { User } from "@/lib/data";
-import { findUserByCredentials, findUserById } from "@/lib/users";
+import { fetchUserById, loginAsync } from "@/lib/users";
+
+// ════════════════════════════════════════════════════════════
+// AuthProvider
+//
+// Antes los usuarios vivían en una lista local en `lib/users.ts`.
+// Ahora viven en la BBDD. Los componentes consumidores siguen
+// usando `login(username, password)` síncrono y reciben un boolean
+// inmediato (devuelve `false` mientras se resuelve la promesa).
+//
+// Si quieres feedback completo (texto del error backend), usa
+// `loginAsync` directamente con `useAsyncLogin()`.
+// ════════════════════════════════════════════════════════════
 
 interface AuthContextType {
   user: User | null;
+  /**
+   * Login síncrono: devuelve `false` inicialmente y dispara el login asíncrono.
+   * El estado se actualiza cuando termina la petición. Para feedback completo
+   * con mensajes de error del backend, usa `loginAsync` desde `@/lib/users`.
+   */
   login: (username: string, password: string) => boolean;
+  /**
+   * Login asíncrono: devuelve `Promise<boolean>` y actualiza el estado.
+   * Recomendado para flujos donde puedas usar await.
+   */
+  loginAsync: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   favorites: string[];
   toggleFavorite: (teamId: string) => void;
+  /** True mientras se hidrata el usuario desde localStorage al cargar. */
+  isHydrating: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   login: () => false,
+  loginAsync: async () => false,
   logout: () => {},
   favorites: [],
   toggleFavorite: () => {},
+  isHydrating: true,
 });
 
 const STORAGE_KEY_USER = "penita_user";
@@ -32,10 +66,10 @@ function safeGet(key: string): string | null {
   }
 }
 
-function safeSet(key: string, val: string) {
+function safeSet(key: string, value: string) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(key, val);
+    localStorage.setItem(key, value);
   } catch {
     // noop
   }
@@ -50,48 +84,82 @@ function safeRemove(key: string) {
   }
 }
 
+function loadFavoritesFor(userId: string): string[] {
+  const raw = safeGet(`${STORAGE_KEY_FAVS}_${userId}`);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [isHydrating, setIsHydrating] = useState(true);
 
+  // Evita doble hidratación si el efecto se dispara dos veces en dev (StrictMode)
+  const hydratedRef = useRef(false);
+
+  // Hidratación inicial: si hay un id guardado, validamos contra el backend.
+  // Si la BBDD ya no tiene ese usuario (porque borraste demos), limpiamos.
   useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+
     const savedId = safeGet(STORAGE_KEY_USER);
-    if (savedId) {
-      const found = findUserById(savedId);
+    if (!savedId) {
+      setIsHydrating(false);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const found = await fetchUserById(savedId);
+      if (cancelled) return;
       if (found) {
         setUser(found);
-        const favsRaw = safeGet(`${STORAGE_KEY_FAVS}_${found.id}`);
-        if (favsRaw) {
-          try {
-            setFavorites(JSON.parse(favsRaw));
-          } catch {
-            setFavorites([]);
-          }
-        }
+        setFavorites(loadFavoritesFor(found.id));
+      } else {
+        // El id de localStorage ya no existe en BBDD: limpiamos sesión.
+        safeRemove(STORAGE_KEY_USER);
       }
-    }
+      setIsHydrating(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const login = useCallback((username: string, password: string): boolean => {
-    const found = findUserByCredentials(username, password);
-    if (!found) return false;
+  const loginAsyncFn = useCallback(
+    async (username: string, password: string): Promise<boolean> => {
+      const result = await loginAsync(username, password);
+      if (!result.ok) return false;
 
-    setUser(found);
-    safeSet(STORAGE_KEY_USER, found.id);
+      setUser(result.user);
+      safeSet(STORAGE_KEY_USER, result.user.id);
+      setFavorites(loadFavoritesFor(result.user.id));
+      return true;
+    },
+    []
+  );
 
-    const favsRaw = safeGet(`${STORAGE_KEY_FAVS}_${found.id}`);
-    if (favsRaw) {
-      try {
-        setFavorites(JSON.parse(favsRaw));
-      } catch {
-        setFavorites([]);
-      }
-    } else {
-      setFavorites([]);
-    }
-
-    return true;
-  }, []);
+  // Versión síncrona para mantener compatibilidad con el código existente
+  // (el LoginView de mi-club espera boolean inmediato). Devuelve `false`
+  // optimistamente y dispara la promesa; el estado se reflejará cuando
+  // termine. El componente puede observar `user` en el siguiente render.
+  const login = useCallback(
+    (username: string, password: string): boolean => {
+      void loginAsyncFn(username, password);
+      // Devolvemos siempre false para no engañar al caller. Los consumidores
+      // que necesiten feedback real deben usar loginAsync.
+      return false;
+    },
+    [loginAsyncFn]
+  );
 
   const logout = useCallback(() => {
     setUser(null);
@@ -102,15 +170,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const toggleFavorite = useCallback(
     (teamId: string) => {
       setFavorites((prev) => {
-        const next = prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId];
-        if (user) safeSet(`${STORAGE_KEY_FAVS}_${user.id}`, JSON.stringify(next));
+        const next = prev.includes(teamId)
+          ? prev.filter((id) => id !== teamId)
+          : [...prev, teamId];
+        if (user) {
+          safeSet(`${STORAGE_KEY_FAVS}_${user.id}`, JSON.stringify(next));
+        }
         return next;
       });
     },
     [user]
   );
 
-  return <AuthContext.Provider value={{ user, login, logout, favorites, toggleFavorite }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        loginAsync: loginAsyncFn,
+        logout,
+        favorites,
+        toggleFavorite,
+        isHydrating,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

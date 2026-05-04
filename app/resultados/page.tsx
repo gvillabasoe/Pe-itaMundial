@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { EmptyState, Flag, GroupBadge, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
-import { REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
+import { getCityBgColor, getCityColor, REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
 import { getStatusDisplay, getStatusGroup, isLivePollingStatus } from "@/lib/config/match-status";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
 import type { AdminResults } from "@/lib/admin-results";
@@ -600,6 +600,11 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
   const isSpain = match.homeTeam === "España" || match.awayTeam === "España";
   const sg = getStatusGroup(match.statusShort);
   const showScore = sg === "live" || sg === "halftime" || sg === "finished";
+  // Restauramos paleta cromática por sede: el color principal del badge
+  // viene de la región (oeste/centro/este) y el fondo es una versión
+  // claramente más clara. Antes esto se había perdido al simplificar.
+  const cityColor = getCityColor(match.hostCity);
+  const cityBg = getCityBgColor(match.hostCity);
 
   return (
     <button
@@ -623,9 +628,9 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold"
           style={{
-            background: "rgb(var(--bg-muted))",
-            color: "rgb(var(--text-secondary))",
-            border: "1px solid rgb(var(--border-subtle))",
+            background: cityBg,
+            color: cityColor,
+            border: `1px solid ${cityColor}33`,
           }}
         >
           <MapPin size={9} /> {match.hostCity}
