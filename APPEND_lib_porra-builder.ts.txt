@@ -27,11 +27,9 @@ export function createDraftFromTeam(team: Team): PorraDraft {
     };
   });
 
-  // Partido doble: la Team lo guarda como Record<string, string>,
-  // el PorraDraft como Record<string, string[]>
+  // Doble por grupo: Team.doubleMatches es Record<string, string>
   Object.entries(team.doubleMatches || {}).forEach(([group, val]) => {
-    if (!val) return;
-    base.doubleMatches[group] = Array.isArray(val) ? val : [val as string];
+    if (val) base.doubleMatches[group] = [val];
   });
 
   // Orden de clasificación en grupos

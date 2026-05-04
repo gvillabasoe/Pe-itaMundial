@@ -295,3 +295,9 @@ export function formatAdminSavedAt(savedAt: string | null | undefined): string {
     minute: "2-digit",
   }).format(date);
 }
+
+export function hasConfiguredAdminResults(value: AdminResults): boolean {
+  if (value.configured) return true;
+  // También consideramos configurado si hay algún marcador guardado
+  return Object.values(value.matchResults).some(isConfiguredMatchResult);
+}

@@ -73,7 +73,8 @@ function calculateTeamProgress(team: Team): PorraProgress {
 
   const filledDoubles = groupKeys.filter((g) => {
     const d = team.doubleMatches?.[g];
-    return d && (typeof d === "string" ? d.length > 0 : d.length > 0);
+    // doubleMatches es Record<string, string> — basta con que el valor no esté vacío
+    return Boolean(d && d.length > 0);
   }).length;
 
   const filledPositions = groupKeys.filter((g) => {
