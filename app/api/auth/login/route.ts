@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { scrypt as scryptCb, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
+import { scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 import { getDbPool } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -22,7 +21,23 @@ export const dynamic = "force-dynamic";
 //   - Vercel ejecuta Node 20+ → scrypt disponible nativamente
 // ════════════════════════════════════════════════════════════
 
-const scryptAsync = promisify(scryptCb);
+function scryptAsync(
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  options: ScryptOptions
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, keylen, options, (error, derivedKey) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(derivedKey);
+    });
+  });
+}
 
 interface LoginPayload {
   username: string;
@@ -58,11 +73,11 @@ async function verifyScryptHash(password: string, encoded: string): Promise<bool
 
     if (salt.length === 0 || expected.length === 0) return false;
 
-    const derived = (await scryptAsync(password, salt, expected.length, {
+    const derived = await scryptAsync(password, salt, expected.length, {
       N,
       r,
       p,
-    })) as Buffer;
+    });
 
     // timingSafeEqual requiere buffers del mismo tamaño
     if (derived.length !== expected.length) return false;
