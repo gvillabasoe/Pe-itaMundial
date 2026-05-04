@@ -1,9 +1,28 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+import { scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import { getDbPool } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// ════════════════════════════════════════════════════════════
+// Auth con scrypt nativo de Node (sin dependencias externas).
+//
+// Los password_hash en la tabla `users` siguen el formato:
+//   scrypt$<N>$<r>$<p>$<salt_b64>$<hash_b64>
+//
+// Donde N, r, p son parámetros estándar de scrypt y salt/hash van
+// codificados en base64. Compatible con la salida de crypto.scryptSync().
+//
+// Por qué scrypt en lugar de bcrypt:
+//   - bcrypt requiere instalar `bcryptjs` o `bcrypt` (módulo nativo)
+//   - scrypt está en `node:crypto` desde Node 10, sin instalar nada
+//   - scrypt es robusto, recomendado por OWASP, y resistente a GPUs
+//   - Vercel ejecuta Node 20+ → scrypt disponible nativamente
+// ════════════════════════════════════════════════════════════
+
+const scryptAsync = promisify(scryptCb);
 
 interface LoginPayload {
   username: string;
@@ -15,6 +34,42 @@ function jsonError(message: string, status = 401) {
     { error: message },
     { status, headers: { "Cache-Control": "no-store" } }
   );
+}
+
+/**
+ * Verifica una contraseña contra un hash en formato:
+ *   scrypt$<N>$<r>$<p>$<salt_b64>$<hash_b64>
+ *
+ * Devuelve `false` (sin lanzar) si el formato es inválido o si la
+ * comparación timing-safe falla. Nunca filtra detalles del error.
+ */
+async function verifyScryptHash(password: string, encoded: string): Promise<boolean> {
+  try {
+    const parts = encoded.split("$");
+    if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+
+    const N = parseInt(parts[1], 10);
+    const r = parseInt(parts[2], 10);
+    const p = parseInt(parts[3], 10);
+    if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p)) return false;
+
+    const salt = Buffer.from(parts[4], "base64");
+    const expected = Buffer.from(parts[5], "base64");
+
+    if (salt.length === 0 || expected.length === 0) return false;
+
+    const derived = (await scryptAsync(password, salt, expected.length, {
+      N,
+      r,
+      p,
+    })) as Buffer;
+
+    // timingSafeEqual requiere buffers del mismo tamaño
+    if (derived.length !== expected.length) return false;
+    return timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(request: Request) {
@@ -33,8 +88,9 @@ export async function POST(request: Request) {
     return jsonError("Faltan credenciales", 400);
   }
 
-  // Pequeño delay artificial uniforme para mitigar enumeración por timing.
-  // (No es seguridad real, solo desincentiva ataques triviales.)
+  // Delay artificial uniforme (~250ms) para mitigar ataques de timing
+  // que enumeran usuarios existentes basándose en la diferencia entre
+  // un usuario inexistente y uno con contraseña errónea.
   const start = Date.now();
 
   const pool = getDbPool();
@@ -58,10 +114,11 @@ export async function POST(request: Request) {
     );
 
     const row = result.rows[0];
-    const hash = row?.password_hash || "";
-    const valid = hash ? await bcrypt.compare(password, hash) : false;
+    const valid = row?.password_hash
+      ? await verifyScryptHash(password, row.password_hash)
+      : false;
 
-    // Ajuste de timing: cualquier respuesta tarda al menos ~250ms.
+    // Pad timing a 250ms mínimo
     const elapsed = Date.now() - start;
     if (elapsed < 250) {
       await new Promise((r) => setTimeout(r, 250 - elapsed));
