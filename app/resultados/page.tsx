@@ -94,6 +94,65 @@ function getAdminResultOverride(matchId: number, adminResults: AdminResults) {
   };
 }
 
+// ── Resolución de kickoffs (WorldCupMatch no tiene `kickoff` propio) ─
+
+function buildIsoSeries(startDate: string, hoursUtc: number[], count: number): string[] {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const values: string[] = [];
+  let h = 0;
+  let d = 0;
+  for (let i = 0; i < count; i += 1) {
+    const slot = new Date(start);
+    slot.setUTCDate(start.getUTCDate() + d);
+    slot.setUTCHours(hoursUtc[h], 0, 0, 0);
+    values.push(slot.toISOString());
+    h += 1;
+    if (h >= hoursUtc.length) {
+      h = 0;
+      d += 1;
+    }
+  }
+  return values;
+}
+
+const GROUP_KICKOFF_BY_PAIR = new Map<string, string>();
+FIXTURES.forEach((f) => {
+  if (!f.kickoff) return;
+  const key1 = `${normalizeKey(f.homeTeam)}|${normalizeKey(f.awayTeam)}`;
+  const key2 = `${normalizeKey(f.awayTeam)}|${normalizeKey(f.homeTeam)}`;
+  GROUP_KICKOFF_BY_PAIR.set(key1, f.kickoff);
+  GROUP_KICKOFF_BY_PAIR.set(key2, f.kickoff);
+});
+
+const KNOCKOUT_KICKOFF_FALLBACKS: Record<Exclude<MatchStage, "group">, string[]> = {
+  "round-of-32": buildIsoSeries("2026-06-28", [16, 19], 16),
+  "round-of-16": buildIsoSeries("2026-07-06", [16, 19], 8),
+  "quarter-final": buildIsoSeries("2026-07-11", [16, 19], 4),
+  "semi-final": buildIsoSeries("2026-07-15", [19], 2),
+  "third-place": buildIsoSeries("2026-07-18", [18], 1),
+  final: buildIsoSeries("2026-07-19", [19], 1),
+};
+
+const KNOCKOUT_KICKOFF_BY_ID = new Map<number, string>();
+(Object.keys(KNOCKOUT_KICKOFF_FALLBACKS) as Array<Exclude<MatchStage, "group">>).forEach((stage) => {
+  WORLD_CUP_MATCHES.filter((m) => m.stage === stage).forEach((m, i) => {
+    KNOCKOUT_KICKOFF_BY_ID.set(m.id, KNOCKOUT_KICKOFF_FALLBACKS[stage][i]);
+  });
+});
+
+/**
+ * Devuelve el kickoff ISO para un partido del calendario oficial.
+ * - Grupos: lookup por par de equipos en FIXTURES (mock con kickoffs reales).
+ * - Eliminatorias: lookup por id en serie ISO determinista.
+ */
+function getKickoffForMatch(match: WorldCupMatch): string {
+  if (match.stage === "group") {
+    const key = `${normalizeKey(match.homeTeam)}|${normalizeKey(match.awayTeam)}`;
+    return GROUP_KICKOFF_BY_PAIR.get(key) || "2026-06-11T19:00:00.000Z";
+  }
+  return KNOCKOUT_KICKOFF_BY_ID.get(match.id) || "2026-07-19T19:00:00.000Z";
+}
+
 /**
  * Asignación de jornada (1, 2 o 3) por grupo basada en el orden cronológico
  * de los kickoffs. Cada grupo tiene 6 partidos: los 2 más tempranos = jornada 1,
@@ -184,9 +243,10 @@ function mergeScheduleWithApi(
       awayTeam: m.awayTeam,
       statusShort: effectiveResult?.statusShort || "NS",
       minute: effectiveResult?.minute ?? null,
-      // El kickoff siempre viene del schedule oficial (verdad de timezone).
-      // La API solo se usa para score/minuto, no para sobrescribir la fecha.
-      kickoff: m.kickoff,
+      // El kickoff se deriva del schedule oficial. WorldCupMatch no tiene
+      // este campo nativamente: lo resolvemos vía FIXTURES (grupos) o serie
+      // ISO determinista (eliminatorias). La API solo aporta score y minuto.
+      kickoff: getKickoffForMatch(m),
       score: effectiveResult?.score || { home: null, away: null },
       group: m.stage === "group" ? getGroupForMatch(m.homeTeam, m.awayTeam) : null,
       matchday: null, // se rellena después en assignMatchdays
