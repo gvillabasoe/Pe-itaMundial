@@ -205,18 +205,7 @@ function seededRandom(seed: number) {
 // MOCK USERS
 // ═══════════════════════════════════════════════════════
 
-const MOCK_USERS_SEED = [
-  { id: "u1", username: "Carlos_M", teamNames: ["Los Toreros", "Furia Roja", "La Peña"] },
-  { id: "u2", username: "Laura_G", teamNames: ["Las Campeonas"] },
-  { id: "u3", username: "Pepe_92", teamNames: ["Dream Team", "Los Galácticos"] },
-  { id: "u4", username: "Ana_F", teamNames: ["Las Águilas"] },
-  { id: "u5", username: "Miki_R", teamNames: ["Vikingos FC"] },
-  { id: "u6", username: "Sara_L", teamNames: ["Tiki-Taka"] },
-  { id: "u7", username: "Dani_V", teamNames: ["Los Cracks"] },
-  { id: "u8", username: "Lucía_P", teamNames: ["Estrellas"] },
-  { id: "u9", username: "Marcos_T", teamNames: ["Titanes"] },
-  { id: "u10", username: "Elena_S", teamNames: ["Fenix FC"] },
-];
+const MOCK_USERS_SEED: Array<{ id: string; username: string; teamNames: string[] }> = [];
 
 export const MOCK_USERS: User[] = MOCK_USERS_SEED.map((u) => ({
   id: u.id, username: u.username, teams: u.teamNames, favorites: [],
