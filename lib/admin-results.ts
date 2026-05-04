@@ -47,15 +47,39 @@ export const ALL_TEAMS_SORTED = [...ALL_TEAMS].sort((a, b) => a.localeCompare(b,
 export const TEAM_SET = new Set(ALL_TEAMS);
 export const WORLD_CUP_MATCH_IDS = WORLD_CUP_MATCHES.map((match) => String(match.id));
 
-export const KNOCKOUT_COUNTS: Record<KnockoutRoundKey, number> = KNOCKOUT_ROUND_DEFS.reduce((acc, round) => {
-  acc[round.key] = round.count;
-  return acc;
-}, {} as Record<KnockoutRoundKey, number>);
+// KNOCKOUT_COUNTS para el USUARIO (cuántos equipos elige en su porra)
+// → 16, 8, 4, 2 por ronda
+export const KNOCKOUT_COUNTS: Record<KnockoutRoundKey, number> = KNOCKOUT_ROUND_DEFS.reduce(
+  (acc, round) => {
+    acc[round.key] = round.count;
+    return acc;
+  },
+  {} as Record<KnockoutRoundKey, number>
+);
 
-export const KNOCKOUT_LABELS: Record<KnockoutRoundKey, string> = KNOCKOUT_ROUND_DEFS.reduce((acc, round) => {
-  acc[round.key] = round.name;
-  return acc;
-}, {} as Record<KnockoutRoundKey, string>);
+// KNOCKOUT_ADMIN_COUNTS para el ADMIN (todos los equipos participantes en cada ronda)
+// → 32, 16, 8, 4 por ronda
+// Se lee del campo `adminCount` añadido en KNOCKOUT_ROUND_DEFS.
+// Si no existe el campo (compat con versiones viejas), usa count * 2 para rondas eliminatorias.
+export const KNOCKOUT_ADMIN_COUNTS: Record<KnockoutRoundKey, number> = KNOCKOUT_ROUND_DEFS.reduce(
+  (acc, round) => {
+    const adminCount =
+      "adminCount" in round
+        ? (round as typeof round & { adminCount: number }).adminCount
+        : round.count;
+    acc[round.key] = adminCount;
+    return acc;
+  },
+  {} as Record<KnockoutRoundKey, number>
+);
+
+export const KNOCKOUT_LABELS: Record<KnockoutRoundKey, string> = KNOCKOUT_ROUND_DEFS.reduce(
+  (acc, round) => {
+    acc[round.key] = round.name;
+    return acc;
+  },
+  {} as Record<KnockoutRoundKey, string>
+);
 
 export const ADMIN_SPECIAL_FIELDS = [
   { key: "mejorJugador", label: "Mejor Jugador", kind: "text" },
@@ -98,38 +122,32 @@ function cleanScore(value: unknown) {
   return Math.floor(numeric);
 }
 
-function sanitizeMatchResult(value: Partial<AdminMatchResult> | null | undefined): AdminMatchResult {
+function sanitizeMatchResult(
+  value: Partial<AdminMatchResult> | null | undefined
+): AdminMatchResult {
   const home = cleanScore(value?.home);
   const away = cleanScore(value?.away);
 
   if (home === null || away === null) {
-    return {
-      home: null,
-      away: null,
-      statusShort: "NS",
-    };
+    return { home: null, away: null, statusShort: "NS" };
   }
-
-  return {
-    home,
-    away,
-    statusShort: "FT",
-  };
+  return { home, away, statusShort: "FT" };
 }
 
+// Usa KNOCKOUT_ADMIN_COUNTS para que el admin pueda registrar todos los participantes
 function normalizeRoundValues(roundKey: KnockoutRoundKey, values: unknown) {
+  const count = KNOCKOUT_ADMIN_COUNTS[roundKey];
   const requested = Array.isArray(values) ? values : [];
   const used = new Set<string>();
-  const next = requested.slice(0, KNOCKOUT_COUNTS[roundKey]).map((value) => {
+
+  const next = requested.slice(0, count).map((value) => {
     const team = cleanTeam(value);
-    if (!team || used.has(team)) {
-      return "";
-    }
+    if (!team || used.has(team)) return "";
     used.add(team);
     return team;
   });
 
-  while (next.length < KNOCKOUT_COUNTS[roundKey]) {
+  while (next.length < count) {
     next.push("");
   }
 
@@ -141,23 +159,29 @@ export function createDefaultAdminResults(): AdminResults {
     version: ADMIN_RESULTS_VERSION,
     configured: false,
     savedAt: null,
-    matchResults: WORLD_CUP_MATCH_IDS.reduce((acc, matchId) => {
-      acc[matchId] = { home: null, away: null, statusShort: "NS" };
-      return acc;
-    }, {} as Record<string, AdminMatchResult>),
-    groupPositions: ALL_TEAMS.reduce((acc, team) => {
-      acc[team] = 0;
-      return acc;
-    }, {} as Record<string, GroupPositionValue>),
-    knockoutRounds: KNOCKOUT_ROUND_DEFS.reduce((acc, round) => {
-      acc[round.key] = Array.from({ length: round.count }, () => "");
-      return acc;
-    }, {} as Record<KnockoutRoundKey, string[]>),
-    podium: {
-      campeon: "",
-      subcampeon: "",
-      tercero: "",
-    },
+    matchResults: WORLD_CUP_MATCH_IDS.reduce(
+      (acc, matchId) => {
+        acc[matchId] = { home: null, away: null, statusShort: "NS" };
+        return acc;
+      },
+      {} as Record<string, AdminMatchResult>
+    ),
+    groupPositions: ALL_TEAMS.reduce(
+      (acc, team) => {
+        acc[team] = 0;
+        return acc;
+      },
+      {} as Record<string, GroupPositionValue>
+    ),
+    // ← Usa KNOCKOUT_ADMIN_COUNTS para crear arrays del tamaño correcto (32, 16, 8, 4)
+    knockoutRounds: KNOCKOUT_ROUND_DEFS.reduce(
+      (acc, round) => {
+        acc[round.key] = Array.from({ length: KNOCKOUT_ADMIN_COUNTS[round.key] }, () => "");
+        return acc;
+      },
+      {} as Record<KnockoutRoundKey, string[]>
+    ),
+    podium: { campeon: "", subcampeon: "", tercero: "" },
     specialResults: {
       mejorJugador: "",
       mejorJoven: "",
@@ -173,75 +197,100 @@ export function createDefaultAdminResults(): AdminResults {
   };
 }
 
-export function isConfiguredMatchResult(value?: AdminMatchResult | null) {
-  return Boolean(value && typeof value.home === "number" && typeof value.away === "number");
+export function isConfiguredMatchResult(value?: AdminMatchResult | null): boolean {
+  return typeof value?.home === "number" && typeof value?.away === "number";
 }
 
-export function hasConfiguredAdminResults(data: AdminResults) {
-  const hasMatchResults = Object.values(data.matchResults).some((value) => isConfiguredMatchResult(value));
-  const hasGroups = Object.values(data.groupPositions).some((value) => value > 0);
-  const hasRounds = Object.values(data.knockoutRounds).some((round) => round.some(Boolean));
-  const hasPodium = Boolean(data.podium.campeon || data.podium.subcampeon || data.podium.tercero);
-  const hasSpecials = Object.entries(data.specialResults).some(([key, value]) => key === "minutoPrimerGol" ? value != null : Boolean(value));
-  return hasMatchResults || hasGroups || hasRounds || hasPodium || hasSpecials;
-}
+export function sanitizeAdminResults(value: unknown): AdminResults {
+  const defaults = createDefaultAdminResults();
+  const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
-export function sanitizeAdminResults(input: Partial<AdminResults> | null | undefined): AdminResults {
-  const next = createDefaultAdminResults();
-  const current = input || {};
+  const matchResults: Record<string, AdminMatchResult> = {};
+  const rawMatchResults =
+    raw.matchResults && typeof raw.matchResults === "object"
+      ? (raw.matchResults as Record<string, unknown>)
+      : {};
 
-  WORLD_CUP_MATCH_IDS.forEach((matchId) => {
-    next.matchResults[matchId] = sanitizeMatchResult(current.matchResults?.[matchId]);
-  });
-
-  ALL_TEAMS.forEach((team) => {
-    next.groupPositions[team] = cleanPosition(current.groupPositions?.[team]);
-  });
-
-  KNOCKOUT_ROUND_DEFS.forEach((round) => {
-    next.knockoutRounds[round.key] = normalizeRoundValues(round.key, current.knockoutRounds?.[round.key]);
-  });
-
-  next.podium = {
-    campeon: cleanTeam(current.podium?.campeon),
-    subcampeon: cleanTeam(current.podium?.subcampeon),
-    tercero: cleanTeam(current.podium?.tercero),
-  };
-
-  if (next.podium.campeon && next.podium.campeon === next.podium.subcampeon) {
-    next.podium.subcampeon = "";
-  }
-  if (next.podium.tercero && (next.podium.tercero === next.podium.campeon || next.podium.tercero === next.podium.subcampeon)) {
-    next.podium.tercero = "";
+  for (const matchId of WORLD_CUP_MATCH_IDS) {
+    const existing = rawMatchResults[matchId];
+    matchResults[matchId] = sanitizeMatchResult(
+      existing && typeof existing === "object"
+        ? (existing as Partial<AdminMatchResult>)
+        : undefined
+    );
   }
 
-  next.specialResults = {
-    mejorJugador: cleanText(current.specialResults?.mejorJugador),
-    mejorJoven: cleanText(current.specialResults?.mejorJoven),
-    maxGoleador: cleanText(current.specialResults?.maxGoleador),
-    maxAsistente: cleanText(current.specialResults?.maxAsistente),
-    mejorPortero: cleanText(current.specialResults?.mejorPortero),
-    maxGoleadorEsp: cleanText(current.specialResults?.maxGoleadorEsp),
-    primerGolEsp: cleanText(current.specialResults?.primerGolEsp),
-    revelacion: cleanTeam(current.specialResults?.revelacion),
-    decepcion: cleanTeam(current.specialResults?.decepcion),
-    minutoPrimerGol: cleanMinute(current.specialResults?.minutoPrimerGol),
+  const groupPositions: Record<string, GroupPositionValue> = {};
+  const rawGroupPositions =
+    raw.groupPositions && typeof raw.groupPositions === "object"
+      ? (raw.groupPositions as Record<string, unknown>)
+      : {};
+
+  for (const team of ALL_TEAMS) {
+    groupPositions[team] = cleanPosition(rawGroupPositions[team]);
+  }
+
+  const knockoutRounds: Record<KnockoutRoundKey, string[]> = {} as Record<
+    KnockoutRoundKey,
+    string[]
+  >;
+  const rawKnockoutRounds =
+    raw.knockoutRounds && typeof raw.knockoutRounds === "object"
+      ? (raw.knockoutRounds as Record<string, unknown>)
+      : {};
+
+  for (const round of KNOCKOUT_ROUND_DEFS) {
+    knockoutRounds[round.key] = normalizeRoundValues(round.key, rawKnockoutRounds[round.key]);
+  }
+
+  const rawPodium =
+    raw.podium && typeof raw.podium === "object"
+      ? (raw.podium as Record<string, unknown>)
+      : {};
+
+  const rawSpecials =
+    raw.specialResults && typeof raw.specialResults === "object"
+      ? (raw.specialResults as Record<string, unknown>)
+      : {};
+
+  return {
+    version: ADMIN_RESULTS_VERSION,
+    configured: Boolean(raw.configured),
+    savedAt:
+      typeof raw.savedAt === "string" && raw.savedAt
+        ? raw.savedAt
+        : defaults.savedAt,
+    matchResults,
+    groupPositions,
+    knockoutRounds,
+    podium: {
+      campeon: cleanTeam(rawPodium.campeon),
+      subcampeon: cleanTeam(rawPodium.subcampeon),
+      tercero: cleanTeam(rawPodium.tercero),
+    },
+    specialResults: {
+      mejorJugador: cleanText(rawSpecials.mejorJugador),
+      mejorJoven: cleanText(rawSpecials.mejorJoven),
+      maxGoleador: cleanText(rawSpecials.maxGoleador),
+      maxAsistente: cleanText(rawSpecials.maxAsistente),
+      mejorPortero: cleanText(rawSpecials.mejorPortero),
+      maxGoleadorEsp: cleanText(rawSpecials.maxGoleadorEsp),
+      primerGolEsp: cleanText(rawSpecials.primerGolEsp),
+      revelacion: cleanTeam(rawSpecials.revelacion),
+      decepcion: cleanTeam(rawSpecials.decepcion),
+      minutoPrimerGol: cleanMinute(rawSpecials.minutoPrimerGol),
+    },
   };
-
-  next.version = ADMIN_RESULTS_VERSION;
-  next.savedAt = current.savedAt ? String(current.savedAt) : null;
-  next.configured = hasConfiguredAdminResults(next);
-
-  return next;
 }
 
-export function formatAdminSavedAt(value?: string | null) {
-  if (!value) return "Sin guardar";
-  const date = new Date(value);
+export function formatAdminSavedAt(savedAt: string | null | undefined): string {
+  if (!savedAt) return "Sin guardar";
+  const date = new Date(savedAt);
   if (Number.isNaN(date.getTime())) return "Sin guardar";
   return new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
     day: "2-digit",
-    month: "2-digit",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);

@@ -1,0 +1,111 @@
+// INSTRUCCIÓN: Añadir estas exportaciones AL FINAL de lib/porra-builder.ts (antes del cierre del archivo)
+
+import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
+import type { Team } from "@/lib/data";
+
+/**
+ * Reconstruye un PorraDraft a partir de una Team guardada.
+ * Útil para el modo de edición en Mi Club.
+ *
+ * NOTA: La reconstrucción del bracket de eliminatorias es aproximada:
+ * asigna los equipos escogidos a los slots del bracket en orden.
+ * El usuario verá el bracket pre-rellenado con sus picks anteriores
+ * y podrá ajustarlo antes de guardar de nuevo.
+ */
+export function createDraftFromTeam(team: Team): PorraDraft {
+  const base = createEmptyPorraDraft(team.userId, team.username);
+
+  // Nombre de la porra
+  base.id = team.id;
+  base.teamName = team.name || "";
+
+  // Partidos de grupo
+  Object.entries(team.matchPicks || {}).forEach(([fixtureId, pick]) => {
+    base.matchPicks[fixtureId] = {
+      home: typeof pick.home === "number" ? pick.home : "",
+      away: typeof pick.away === "number" ? pick.away : "",
+    };
+  });
+
+  // Partido doble: la Team lo guarda como Record<string, string>,
+  // el PorraDraft como Record<string, string[]>
+  Object.entries(team.doubleMatches || {}).forEach(([group, val]) => {
+    if (!val) return;
+    base.doubleMatches[group] = Array.isArray(val) ? val : [val as string];
+  });
+
+  // Orden de clasificación en grupos
+  Object.entries(team.groupOrderPicks || {}).forEach(([group, picks]) => {
+    base.groupOrderPicks[group] = Array.isArray(picks) ? [...picks] : [];
+  });
+
+  // Mejores terceros
+  base.bestThirdGroups = Array.isArray(team.bestThirdGroups) ? [...team.bestThirdGroups] : [];
+  base.bestThirdAssignments = { ...(team.bestThirdAssignments || {}) };
+
+  // Podio
+  base.championPick = team.championPick || "";
+  base.runnerUpPick = team.runnerUpPick || "";
+  base.thirdPlacePick = team.thirdPlacePick || "";
+
+  // Especiales
+  base.specials = {
+    mejorJugador: team.specials?.mejorJugador || "",
+    mejorJoven: team.specials?.mejorJoven || "",
+    mejorPortero: team.specials?.mejorPortero || "",
+    maxGoleador: team.specials?.maxGoleador || "",
+    maxAsistente: team.specials?.maxAsistente || "",
+    maxGoleadorEsp: team.specials?.maxGoleadorEsp || "",
+    primerGolEsp: team.specials?.primerGolEsp || "",
+    revelacion: team.specials?.revelacion || "",
+    decepcion: team.specials?.decepcion || "",
+    minutoPrimerGol:
+      typeof team.specials?.minutoPrimerGol === "number"
+        ? String(team.specials.minutoPrimerGol)
+        : "",
+  };
+
+  // ── Bracket de eliminatorias ──────────────────────────────────────────────
+  // Asignamos los equipos escogidos a los matchIds del bracket en orden.
+  // No es una reconstrucción perfecta (no sabemos qué equipo ganó qué match),
+  // pero pre-rellena el bracket con los equipos correctos.
+
+  // Dieciseisavos → round32
+  const round32Teams = (team.knockoutPicks?.["dieciseisavos"] || []).map((p) => p.country);
+  ROUND32_MATCH_DEFS.forEach((matchDef, idx) => {
+    const country = round32Teams[idx] || "";
+    if (country) base.roundWinners.round32[matchDef.matchId] = country;
+  });
+
+  // Octavos → round16
+  const round16Ids = WORLD_CUP_MATCHES.filter((m) => m.stage === "round-of-16")
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((m) => String(m.id));
+  const round16Teams = (team.knockoutPicks?.["octavos"] || []).map((p) => p.country);
+  round16Ids.forEach((id, idx) => {
+    const country = round16Teams[idx] || "";
+    if (country) base.roundWinners.round16[id] = country;
+  });
+
+  // Cuartos → quarter
+  const quarterIds = WORLD_CUP_MATCHES.filter((m) => m.stage === "quarter-final")
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((m) => String(m.id));
+  const quarterTeams = (team.knockoutPicks?.["cuartos"] || []).map((p) => p.country);
+  quarterIds.forEach((id, idx) => {
+    const country = quarterTeams[idx] || "";
+    if (country) base.roundWinners.quarter[id] = country;
+  });
+
+  // Semifinales → semi
+  const semiIds = WORLD_CUP_MATCHES.filter((m) => m.stage === "semi-final")
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((m) => String(m.id));
+  const semiTeams = (team.knockoutPicks?.["semis"] || []).map((p) => p.country);
+  semiIds.forEach((id, idx) => {
+    const country = semiTeams[idx] || "";
+    if (country) base.roundWinners.semi[id] = country;
+  });
+
+  return base;
+}
