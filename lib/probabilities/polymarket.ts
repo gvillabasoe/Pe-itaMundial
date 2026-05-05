@@ -1,22 +1,23 @@
-import { FEATURED_TEAM_BY_NAME, FEATURED_TEAM_ORDER, FEATURED_TEAMS } from "@/lib/probabilities/team-config";
+import { GROUPS } from "@/lib/data";
+import { getProbabilityMarket, type ProbabilityMarketDefinition } from "@/lib/probabilities/markets";
+import {
+  FEATURED_TEAM_BY_NAME,
+  FEATURED_TEAM_ORDER,
+  FEATURED_TEAMS,
+  getProbabilityColorForName,
+} from "@/lib/probabilities/team-config";
 import { QUALIFIED_TEAMS_2026 } from "@/lib/worldcup/qualified-teams";
 
 const GAMMA_BASE = process.env.POLYMARKET_GAMMA_BASE || "https://gamma-api.polymarket.com";
 const REQUEST_TIMEOUT_MS = 6000;
-const MAX_RANKING_ITEMS = 10;
-const MINIMUM_DISPLAY_PROBABILITY = 2;
-const SEARCH_QUERIES = [
-  "fifa world cup 2026 winner",
-  "world cup 2026 winner",
-  "2026 world cup champion",
-  "2026 fifa world cup",
-] as const;
+const DEFAULT_MAX_RANKING_ITEMS = 10;
 
 interface RawMarket {
   id?: string;
   slug?: string;
   question?: string;
   title?: string;
+  description?: string;
   groupItemTitle?: string;
   outcomes?: string[] | string;
   outcomePrices?: number[] | string;
@@ -59,6 +60,11 @@ export interface ProbabilitySnapshot {
   source: "polymarket";
   updatedAt: string;
   stale: boolean;
+  marketKey: string;
+  marketDisplayName: string;
+  marketPolymarketLabel: string;
+  marketKind: "team" | "open";
+  marketGroup: string | null;
   marketMode: "multi" | "binary" | "mixed" | "unknown";
   marketLabel: string | null;
   featured: Record<string, number | null>;
@@ -79,6 +85,8 @@ const TEAM_ALIASES: Record<string, string[]> = {
   "Brasil": ["brazil", "brasil"],
   "Cabo Verde": ["cape verde", "cabo verde"],
   "Canadá": ["canada", "canadá"],
+  "Catar": ["qatar", "catar"],
+  "Chequia": ["czechia", "czech republic", "chequia", "republica checa", "república checa"],
   "Colombia": ["colombia"],
   "Corea del Sur": ["south korea", "korea republic", "republic of korea", "corea del sur", "corea"],
   "Costa de Marfil": ["ivory coast", "cote divoire", "côte d'ivoire", "costa de marfil", "costa marfil"],
@@ -107,7 +115,7 @@ const TEAM_ALIASES: Record<string, string[]> = {
   "Panamá": ["panama", "panamá"],
   "Paraguay": ["paraguay"],
   "Portugal": ["portugal"],
-  "RD Congo": ["dr congo", "congo dr", "rd congo", "rd del congo", "democratic republic of the congo"],
+  "RD Congo": ["dr congo", "congo dr", "rd congo", "rd del congo", "democratic republic of the congo", "drc"],
   "Senegal": ["senegal"],
   "Sudáfrica": ["south africa", "sudafrica", "sudáfrica"],
   "Suecia": ["sweden", "suecia"],
@@ -118,7 +126,7 @@ const TEAM_ALIASES: Record<string, string[]> = {
   "Uzbekistán": ["uzbekistan", "uzbekistán"],
 };
 
-let lastGoodSnapshot: ProbabilitySnapshot | null = null;
+const lastGoodSnapshots = new Map<string, ProbabilitySnapshot>();
 
 function normalizeText(value: string): string {
   return value
@@ -167,7 +175,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function fetchSearch(query: string): Promise<RawSearchPayload> {
-  const url = `${GAMMA_BASE}/public-search?q=${encodeURIComponent(query)}&limit_per_type=20`;
+  const url = `${GAMMA_BASE}/public-search?q=${encodeURIComponent(query)}&limit_per_type=35`;
   const response = await withTimeout(fetch(url, { next: { revalidate: 300 } } as any), REQUEST_TIMEOUT_MS);
   if (!response.ok) {
     throw new Error(`Polymarket search failed with ${response.status}`);
@@ -197,20 +205,43 @@ function yesIndex(outcomes: string[]): number {
   return idx >= 0 ? idx : 0;
 }
 
-function marketScore(market: RawMarket): number {
-  const text = normalizeText([market.question, market.title, market.groupItemTitle, market.slug].filter(Boolean).join(" "));
+function getMarketText(market: RawMarket): string {
+  return [market.question, market.title, market.groupItemTitle, market.description, market.slug]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function marketScore(market: RawMarket, definition: ProbabilityMarketDefinition): number {
+  const text = normalizeText(getMarketText(market));
   let score = 0;
-  if (text.includes("world cup") || text.includes("fifa")) score += 3;
-  if (text.includes("2026")) score += 3;
-  if (text.includes("winner") || text.includes("champion") || text.includes("win")) score += 2;
-  if (text.includes("outright")) score += 1;
-  if (text.includes("vs") || text.includes("match") || text.includes("game")) score -= 5;
+
+  for (const term of definition.requiredTerms) {
+    score += text.includes(normalizeText(term)) ? 4 : -3;
+  }
+
+  let matchedBonusTerms = 0;
+  for (const term of definition.bonusTerms || []) {
+    if (text.includes(normalizeText(term))) {
+      matchedBonusTerms += 1;
+      score += 2;
+    }
+  }
+
+  for (const term of definition.excludeTerms || []) {
+    if (text.includes(normalizeText(term))) score -= 7;
+  }
+
+  if (definition.kind === "open" && matchedBonusTerms === 0) score -= 6;
+  if (definition.group && !text.includes(`group ${definition.group.toLowerCase()}`)) score -= 5;
+
   if (market.active !== false) score += 1;
-  if (market.closed) score -= 2;
+  if (market.closed) score -= 4;
+
   const volume = Number(market.volumeNum ?? market.volume ?? 0);
   const liquidity = Number(market.liquidityNum ?? market.liquidity ?? 0);
   if (Number.isFinite(volume) && volume > 0) score += Math.min(Math.log10(volume + 1), 2);
   if (Number.isFinite(liquidity) && liquidity > 0) score += Math.min(Math.log10(liquidity + 1), 1.5);
+
   return score;
 }
 
@@ -235,7 +266,7 @@ function findCanonicalTeam(text: string): string | null {
 
 function updateCandidate(map: Map<string, Candidate>, candidate: Candidate) {
   const current = map.get(candidate.teamName);
-  if (!current || candidate.confidence > current.confidence) {
+  if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.probabilityPct > current.probabilityPct)) {
     map.set(candidate.teamName, candidate);
   }
 }
@@ -248,12 +279,35 @@ function isRecognizedFavorite(teamName: string) {
   return RECOGNIZED_SHORTLIST_KEYS.has(normalizeText(teamName));
 }
 
-function shouldDisplayCandidate(candidate: Candidate) {
-  if (!isQualifiedTeam(candidate.teamName)) return false;
-  return candidate.probabilityPct >= MINIMUM_DISPLAY_PROBABILITY || isRecognizedFavorite(candidate.teamName);
+function getTeamPool(definition: ProbabilityMarketDefinition): readonly string[] {
+  if (definition.group && GROUPS[definition.group]) return GROUPS[definition.group];
+  return QUALIFIED_TEAMS_2026;
 }
 
-function extractCandidates(markets: RawMarket[]): Map<string, Candidate> {
+function isAllowedTeam(teamName: string, definition: ProbabilityMarketDefinition) {
+  if (definition.group) return getTeamPool(definition).includes(teamName);
+  return isQualifiedTeam(teamName);
+}
+
+function shouldDisplayCandidate(candidate: Candidate, definition: ProbabilityMarketDefinition) {
+  const minimum = definition.minDisplayProbability ?? 0;
+  if (definition.kind === "open") return candidate.probabilityPct >= minimum;
+  if (!isAllowedTeam(candidate.teamName, definition)) return false;
+  if (definition.group) return true;
+  return candidate.probabilityPct >= minimum || isRecognizedFavorite(candidate.teamName);
+}
+
+function validOutcomePairs(outcomes: string[], prices: number[]) {
+  return outcomes
+    .map((outcome, index) => ({ outcome, price: prices[index] }))
+    .filter((pair) => Number.isFinite(pair.price) && pair.price > 0 && pair.price <= 1);
+}
+
+function marketLabel(market: RawMarket) {
+  return market.question || market.title || market.groupItemTitle || market.slug || "Mercado Polymarket";
+}
+
+function extractTeamCandidates(markets: RawMarket[], definition: ProbabilityMarketDefinition): Map<string, Candidate> {
   const candidates = new Map<string, Candidate>();
 
   for (const market of markets) {
@@ -261,23 +315,21 @@ function extractCandidates(markets: RawMarket[]): Map<string, Candidate> {
     const prices = parseNumberList(market.outcomePrices);
     if (!outcomes.length || !prices.length || outcomes.length !== prices.length) continue;
 
-    const score = marketScore(market);
+    const score = marketScore(market, definition);
     if (score <= 0) continue;
 
-    const validPairs = outcomes
-      .map((outcome, index) => ({ outcome, price: prices[index] }))
-      .filter((pair) => Number.isFinite(pair.price) && pair.price > 0 && pair.price <= 1);
-
+    const validPairs = validOutcomePairs(outcomes, prices);
     if (!validPairs.length) continue;
 
     const teamOutcomes = validPairs
       .map((pair) => ({ teamName: findCanonicalTeam(pair.outcome), probability01: pair.price }))
-      .filter((pair): pair is { teamName: string; probability01: number } => Boolean(pair.teamName));
+      .filter((pair): pair is { teamName: string; probability01: number } => Boolean(pair.teamName && isAllowedTeam(pair.teamName, definition)));
 
     const uniqueTeams = Array.from(new Set(teamOutcomes.map((pair) => pair.teamName)));
-    const label = market.question || market.title || market.groupItemTitle || market.slug || "Mercado Polymarket";
+    const label = marketLabel(market);
+    const minimumTeams = definition.group ? 2 : 3;
 
-    if (uniqueTeams.length >= 3) {
+    if (uniqueTeams.length >= minimumTeams) {
       for (const pair of teamOutcomes) {
         updateCandidate(candidates, {
           teamName: pair.teamName,
@@ -292,8 +344,8 @@ function extractCandidates(markets: RawMarket[]): Map<string, Candidate> {
       continue;
     }
 
-    const teamFromText = findCanonicalTeam([market.question, market.title, market.groupItemTitle, market.slug].filter(Boolean).join(" "));
-    if (!teamFromText) continue;
+    const teamFromText = findCanonicalTeam(getMarketText(market));
+    if (!teamFromText || !isAllowedTeam(teamFromText, definition)) continue;
 
     const idx = yesIndex(outcomes);
     const probability01 = prices[idx];
@@ -313,52 +365,190 @@ function extractCandidates(markets: RawMarket[]): Map<string, Candidate> {
   return candidates;
 }
 
-async function fetchFeaturedFallbacks(candidates: Map<string, Candidate>) {
-  for (const team of FEATURED_TEAMS) {
-    if (candidates.has(team.teamName)) continue;
-    const query = `${team.teamName} world cup 2026 winner`;
+function cleanOpenOutcomeName(value: string): string {
+  return String(value || "")
+    .replace(/^\s*[•\-–—]+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGenericOpenOutcome(name: string): boolean {
+  const normalized = normalizeText(name);
+  return (
+    !normalized ||
+    normalized === "yes" ||
+    normalized === "no" ||
+    normalized === "other" ||
+    normalized === "others" ||
+    normalized === "the field" ||
+    normalized === "field" ||
+    normalized === "any other" ||
+    normalized === "any other player" ||
+    normalized === "none"
+  );
+}
+
+function looksLikeOpenCandidateName(name: string): boolean {
+  const normalized = normalizeText(name);
+  if (isGenericOpenOutcome(name)) return false;
+  if (name.length < 2 || name.length > 70) return false;
+  if (/^\d+/.test(normalized)) return false;
+  if (normalized.includes("world cup") || normalized.includes("fifa") || normalized.includes("polymarket")) return false;
+  if (normalized.includes("top goalscorer") || normalized.includes("most assists") || normalized.includes("most clean sheets")) return false;
+  return true;
+}
+
+function stripOpenMarketText(value: string): string {
+  return cleanOpenOutcomeName(value)
+    .replace(/^will\s+/i, "")
+    .replace(/^can\s+/i, "")
+    .replace(/\?+$/g, "")
+    .replace(/\s+(?:win|be|finish|record|have|lead|top)\b.*$/i, "")
+    .replace(/\s+(?:to win|to be)\b.*$/i, "")
+    .trim();
+}
+
+function extractOpenCandidateName(market: RawMarket): string | null {
+  const groupItemTitle = cleanOpenOutcomeName(market.groupItemTitle || "");
+  if (looksLikeOpenCandidateName(groupItemTitle)) return groupItemTitle;
+
+  const title = stripOpenMarketText(market.title || "");
+  if (looksLikeOpenCandidateName(title)) return title;
+
+  const question = stripOpenMarketText(market.question || "");
+  if (looksLikeOpenCandidateName(question)) return question;
+
+  return null;
+}
+
+function extractOpenCandidates(markets: RawMarket[], definition: ProbabilityMarketDefinition): Map<string, Candidate> {
+  const candidates = new Map<string, Candidate>();
+
+  for (const market of markets) {
+    const outcomes = parseStringList(market.outcomes);
+    const prices = parseNumberList(market.outcomePrices);
+    if (!outcomes.length || !prices.length || outcomes.length !== prices.length) continue;
+
+    const score = marketScore(market, definition);
+    if (score <= 0) continue;
+
+    const validPairs = validOutcomePairs(outcomes, prices);
+    if (!validPairs.length) continue;
+
+    const labelledPairs = validPairs
+      .map((pair) => ({ teamName: cleanOpenOutcomeName(pair.outcome), probability01: pair.price }))
+      .filter((pair) => looksLikeOpenCandidateName(pair.teamName));
+
+    const uniqueNames = Array.from(new Set(labelledPairs.map((pair) => pair.teamName)));
+    const label = marketLabel(market);
+
+    if (uniqueNames.length >= 3) {
+      for (const pair of labelledPairs) {
+        updateCandidate(candidates, {
+          teamName: pair.teamName,
+          probability01: pair.probability01,
+          probabilityPct: Number((pair.probability01 * 100).toFixed(1)),
+          confidence: score + 5,
+          mode: "multi",
+          marketLabel: label,
+          marketSlug: market.slug || market.id || null,
+        });
+      }
+      continue;
+    }
+
+    const candidateName = extractOpenCandidateName(market);
+    if (!candidateName) continue;
+
+    const idx = yesIndex(outcomes);
+    const probability01 = prices[idx];
+    if (!Number.isFinite(probability01) || probability01 <= 0 || probability01 > 1) continue;
+
+    updateCandidate(candidates, {
+      teamName: candidateName,
+      probability01,
+      probabilityPct: Number((probability01 * 100).toFixed(1)),
+      confidence: score + 2,
+      mode: "binary",
+      marketLabel: label,
+      marketSlug: market.slug || market.id || null,
+    });
+  }
+
+  return candidates;
+}
+
+function mergeCandidates(target: Map<string, Candidate>, source: Map<string, Candidate>) {
+  source.forEach((candidate) => updateCandidate(target, candidate));
+}
+
+function extractCandidates(markets: RawMarket[], definition: ProbabilityMarketDefinition): Map<string, Candidate> {
+  return definition.kind === "team"
+    ? extractTeamCandidates(markets, definition)
+    : extractOpenCandidates(markets, definition);
+}
+
+async function fetchTeamFallbacks(candidates: Map<string, Candidate>, definition: ProbabilityMarketDefinition) {
+  const teams = definition.group ? getTeamPool(definition) : FEATURED_TEAMS.map((team) => team.teamName);
+
+  for (const teamName of teams) {
+    if (candidates.has(teamName)) continue;
+    const query = definition.group
+      ? `${teamName} FIFA World Cup Group ${definition.group} Winner`
+      : `${teamName} world cup 2026 winner`;
+
     try {
       const payload = await fetchSearch(query);
       const markets = collectMarkets(payload);
-      const extracted = extractCandidates(markets);
-      const candidate = extracted.get(team.teamName);
+      const extracted = extractCandidates(markets, definition);
+      const candidate = extracted.get(teamName);
       if (candidate) updateCandidate(candidates, candidate);
     } catch {
-      // ignore featured fallback failure for individual team
+      // ignore team fallback failure for individual outcomes
     }
   }
 }
 
-function buildSnapshotFromCandidates(candidates: Map<string, Candidate>): ProbabilitySnapshot {
-  const qualifiedCandidates = Array.from(candidates.values())
-    .filter((candidate) => isQualifiedTeam(candidate.teamName))
+function buildEmptyFeatured() {
+  return Object.fromEntries(FEATURED_TEAM_ORDER.map((teamName) => [teamName, null])) as Record<string, number | null>;
+}
+
+function buildSnapshotFromCandidates(candidates: Map<string, Candidate>, definition: ProbabilityMarketDefinition): ProbabilitySnapshot {
+  const allowedCandidates = Array.from(candidates.values())
+    .filter((candidate) => definition.kind === "open" || isAllowedTeam(candidate.teamName, definition))
     .sort((a, b) => b.probabilityPct - a.probabilityPct);
 
-  const displayCandidates = qualifiedCandidates.filter(shouldDisplayCandidate);
-  const rankingSource = (displayCandidates.length > 0 ? displayCandidates : qualifiedCandidates).slice(0, MAX_RANKING_ITEMS);
+  const displayCandidates = allowedCandidates.filter((candidate) => shouldDisplayCandidate(candidate, definition));
+  const limit = definition.maxItems ?? DEFAULT_MAX_RANKING_ITEMS;
+  const rankingSource = (displayCandidates.length > 0 ? displayCandidates : allowedCandidates).slice(0, limit);
 
-  const ranking = rankingSource.map((candidate) => ({
+  const ranking = rankingSource.map((candidate, index) => ({
     teamName: candidate.teamName,
     probability01: candidate.probability01,
     probabilityPct: candidate.probabilityPct,
     featured: Boolean(FEATURED_TEAM_BY_NAME[candidate.teamName]),
-    color: FEATURED_TEAM_BY_NAME[candidate.teamName]?.color,
+    color: getProbabilityColorForName(candidate.teamName, index),
   }));
 
   const featured = Object.fromEntries(
     FEATURED_TEAM_ORDER.map((teamName) => {
-      const candidate = qualifiedCandidates.find((item) => item.teamName === teamName);
+      const candidate = allowedCandidates.find((item) => item.teamName === teamName);
       return [teamName, candidate ? candidate.probabilityPct : null];
     })
   ) as Record<string, number | null>;
 
-  const modes = new Set(qualifiedCandidates.map((candidate) => candidate.mode));
+  const modes = new Set(allowedCandidates.map((candidate) => candidate.mode));
   const topCandidate = ranking.length ? candidates.get(ranking[0].teamName) : null;
 
   return {
     source: "polymarket",
     updatedAt: new Date().toISOString(),
     stale: false,
+    marketKey: definition.key,
+    marketDisplayName: definition.label,
+    marketPolymarketLabel: definition.polymarketLabel,
+    marketKind: definition.kind,
+    marketGroup: definition.group || null,
     marketMode: modes.size > 1 ? "mixed" : modes.has("multi") ? "multi" : modes.has("binary") ? "binary" : "unknown",
     marketLabel: topCandidate?.marketLabel || null,
     featured,
@@ -366,11 +556,13 @@ function buildSnapshotFromCandidates(candidates: Map<string, Candidate>): Probab
   };
 }
 
-export async function fetchPolymarketSnapshot(): Promise<ProbabilitySnapshot> {
+export async function fetchPolymarketSnapshot(marketKey?: string | null): Promise<ProbabilitySnapshot> {
+  const definition = getProbabilityMarket(marketKey);
+
   try {
     let allMarkets: RawMarket[] = [];
 
-    for (const query of SEARCH_QUERIES) {
+    for (const query of definition.queries) {
       try {
         const payload = await fetchSearch(query);
         allMarkets = allMarkets.concat(collectMarkets(payload));
@@ -380,20 +572,22 @@ export async function fetchPolymarketSnapshot(): Promise<ProbabilitySnapshot> {
     }
 
     const dedupedMarkets = collectMarkets({ markets: allMarkets });
-    const candidates = extractCandidates(dedupedMarkets);
+    const candidates = extractCandidates(dedupedMarkets, definition);
 
-    if (candidates.size < 3) {
-      await fetchFeaturedFallbacks(candidates);
+    const minimumUsefulCandidates = definition.group ? 2 : definition.kind === "team" ? 3 : 2;
+    if (definition.kind === "team" && candidates.size < minimumUsefulCandidates) {
+      await fetchTeamFallbacks(candidates, definition);
     }
 
     if (candidates.size === 0) {
-      throw new Error("No se encontraron mercados relevantes en Polymarket");
+      throw new Error(`No se encontraron mercados relevantes para ${definition.label} en Polymarket`);
     }
 
-    const snapshot = buildSnapshotFromCandidates(candidates);
-    lastGoodSnapshot = snapshot;
+    const snapshot = buildSnapshotFromCandidates(candidates, definition);
+    lastGoodSnapshots.set(definition.key, snapshot);
     return snapshot;
   } catch (error) {
+    const lastGoodSnapshot = lastGoodSnapshots.get(definition.key);
     if (lastGoodSnapshot) {
       return {
         ...lastGoodSnapshot,
@@ -407,9 +601,14 @@ export async function fetchPolymarketSnapshot(): Promise<ProbabilitySnapshot> {
       source: "polymarket",
       updatedAt: new Date().toISOString(),
       stale: true,
+      marketKey: definition.key,
+      marketDisplayName: definition.label,
+      marketPolymarketLabel: definition.polymarketLabel,
+      marketKind: definition.kind,
+      marketGroup: definition.group || null,
       marketMode: "unknown",
       marketLabel: null,
-      featured: Object.fromEntries(FEATURED_TEAM_ORDER.map((teamName) => [teamName, null])) as Record<string, number | null>,
+      featured: buildEmptyFeatured(),
       ranking: [],
       error: error instanceof Error ? error.message : "Error desconocido en Polymarket",
     };

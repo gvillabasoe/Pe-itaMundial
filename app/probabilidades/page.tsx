@@ -6,7 +6,8 @@ import Image from "next/image";
 import { AlertCircle, Crown, RefreshCw, Sparkles, TrendingUp, Wifi, WifiOff } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CountryWithFlag, EmptyState, Flag, SectionTitle } from "@/components/ui";
-import { FEATURED_TEAM_BY_NAME, FEATURED_TEAMS } from "@/lib/probabilities/team-config";
+import { DEFAULT_PROBABILITY_MARKET_KEY, PROBABILITY_MARKETS } from "@/lib/probabilities/markets";
+import { FEATURED_TEAM_BY_NAME, FEATURED_TEAMS, getProbabilityColorForName } from "@/lib/probabilities/team-config";
 
 interface ProbabilityRankingItem {
   teamName: string;
@@ -20,6 +21,11 @@ interface ProbabilityResponse {
   source: "polymarket";
   updatedAt: string;
   stale: boolean;
+  marketKey: string;
+  marketDisplayName: string;
+  marketPolymarketLabel: string;
+  marketKind: "team" | "open";
+  marketGroup: string | null;
   marketMode: "multi" | "binary" | "mixed" | "unknown";
   marketLabel: string | null;
   featured: Record<string, number | null>;
@@ -53,12 +59,22 @@ function formatUpdatedAt(value?: string | null) {
   });
 }
 
-function getTeamColor(teamName: string) {
-  return FEATURED_TEAM_BY_NAME[teamName]?.color || "#D4AF37";
+function getTeamColor(teamName: string, index = 0) {
+  return FEATURED_TEAM_BY_NAME[teamName]?.color || getProbabilityColorForName(teamName, index);
+}
+
+function getRankingColor(item: ProbabilityRankingItem | null | undefined, index = 0) {
+  return item?.color || getTeamColor(item?.teamName || "", index);
 }
 
 export default function ProbabilidadesPage() {
-  const { data, error, isLoading, mutate } = useSWR<ProbabilityResponse>("/api/probabilities", fetcher, {
+  const [selectedMarket, setSelectedMarket] = useState(DEFAULT_PROBABILITY_MARKET_KEY);
+  const activeMarket = useMemo(
+    () => PROBABILITY_MARKETS.find((market) => market.key === selectedMarket) || PROBABILITY_MARKETS[0],
+    [selectedMarket]
+  );
+
+  const { data, error, isLoading, mutate } = useSWR<ProbabilityResponse>(`/api/probabilities?market=${selectedMarket}`, fetcher, {
     refreshInterval: 60000,
     revalidateOnFocus: true,
   });
@@ -67,6 +83,12 @@ export default function ProbabilidadesPage() {
   const lastStampRef = useRef<string | null>(null);
 
   useEffect(() => {
+    setHistory([]);
+    lastStampRef.current = null;
+  }, [selectedMarket]);
+
+  useEffect(() => {
+    if (selectedMarket !== DEFAULT_PROBABILITY_MARKET_KEY) return;
     if (!data?.updatedAt || !data.ranking.length) return;
     if (lastStampRef.current === data.updatedAt) return;
     lastStampRef.current = data.updatedAt;
@@ -84,14 +106,22 @@ export default function ProbabilidadesPage() {
       const next = [...prev, point];
       return next.length > 24 ? next.slice(-24) : next;
     });
-  }, [data]);
+  }, [data, selectedMarket]);
 
   const ranking = data?.ranking ?? [];
   const heroTeam = ranking[0] ?? null;
-  const shortlist = ranking.slice(0, 10);
+  const shortlist = data?.marketGroup ? ranking : ranking.slice(0, 10);
   const spotlightTeams = ranking.slice(1, 5);
   const topProbability = heroTeam?.probabilityPct || 1;
   const hasRanking = shortlist.length > 0;
+  const heroColor = getRankingColor(heroTeam, 0);
+  const leaderLabel = data?.marketGroup
+    ? "Favorita del grupo"
+    : data?.marketKind === "open"
+      ? "Líder del mercado"
+      : "Favorita del mercado";
+  const probabilityLabel = data?.marketKind === "open" ? "Cuota implícita" : "Probabilidad";
+  const rankingTitle = data?.marketGroup ? `Grupo ${data.marketGroup}` : "Top 10";
 
   const state = isLoading && !data
     ? "loading"
@@ -130,6 +160,34 @@ export default function ProbabilidadesPage() {
         </div>
       </div>
 
+      <section className="card mb-4 animate-fade-in !p-3.5" style={{ animationDelay: "0.02s" }}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">Mercado Polymarket</p>
+            <p className="mt-1 text-sm font-semibold text-text-warm">{activeMarket.label}</p>
+          </div>
+          {selectedMarket === DEFAULT_PROBABILITY_MARKET_KEY ? <span className="badge badge-amber">Principal</span> : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PROBABILITY_MARKETS.map((market) => {
+            const isSelected = selectedMarket === market.key;
+            return (
+              <button
+                key={market.key}
+                type="button"
+                className="rounded-full border px-3 py-1.5 text-[11px] font-semibold transition hover:border-gold/40"
+                style={isSelected
+                  ? { borderColor: "rgba(212,175,55,0.48)", background: "rgba(212,175,55,0.12)", color: "rgb(var(--text-primary))" }
+                  : { borderColor: "rgb(var(--divider) / 0.14)", background: "rgb(var(--bg-2) / 0.62)", color: "rgb(var(--text-muted))" }}
+                onClick={() => setSelectedMarket(market.key)}
+              >
+                {market.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {state === "loading" ? (
         <div className="animate-pulse space-y-3">
           <div className="card h-[180px]" />
@@ -144,7 +202,7 @@ export default function ProbabilidadesPage() {
 
       {state === "empty" ? (
         <EmptyState
-          title="Mercado no disponible"
+          title={`${activeMarket.label} no disponible`}
           text={data?.error || error?.message || "Polymarket no ha devuelto datos válidos."}
           icon={AlertCircle}
           action={
@@ -156,12 +214,12 @@ export default function ProbabilidadesPage() {
       ) : null}
 
       {hasRanking && heroTeam ? (
-        <section className="card card-glow mb-4 animate-fade-in overflow-hidden" style={{ borderColor: `${getTeamColor(heroTeam.teamName)}33` }}>
+        <section className="card card-glow mb-4 animate-fade-in overflow-hidden" style={{ borderColor: `${heroColor}33` }}>
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[rgb(var(--divider)/0.18)] bg-[rgb(var(--bg-2)/0.75)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-                <Crown size={12} style={{ color: getTeamColor(heroTeam.teamName) }} />
-                Favorita del mercado
+                <Crown size={12} style={{ color: heroColor }} />
+                {leaderLabel}
               </div>
               <CountryWithFlag
                 country={heroTeam.teamName}
@@ -170,8 +228,8 @@ export default function ProbabilidadesPage() {
               />
             </div>
             <div className="rounded-[24px] border border-[rgb(var(--divider)/0.16)] bg-[rgb(var(--bg-2)/0.72)] px-5 py-4 text-center shadow-[0_18px_32px_rgba(var(--shadow-color)/0.16)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">Probabilidad</p>
-              <p className="font-display text-[44px] font-black leading-none" style={{ color: getTeamColor(heroTeam.teamName) }}>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">{probabilityLabel}</p>
+              <p className="font-display text-[44px] font-black leading-none" style={{ color: heroColor }}>
                 {formatProbability(heroTeam.probabilityPct)}
                 <span className="ml-1 text-[22px] text-text-muted">%</span>
               </p>
@@ -180,6 +238,7 @@ export default function ProbabilidadesPage() {
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
             <span className="badge badge-muted">Actualizado {formatUpdatedAt(data?.updatedAt)}</span>
+            <span className="badge badge-muted">{data?.marketDisplayName || activeMarket.label}</span>
             {data?.marketLabel ? (
               <span className="badge badge-muted">
                 {data.marketMode === "multi" ? "Mercado global" : data.marketMode === "binary" ? "Mercados binarios" : "Modo mixto"}
@@ -192,14 +251,14 @@ export default function ProbabilidadesPage() {
 
       {hasRanking && spotlightTeams.length ? (
         <section className="mb-4 grid grid-cols-2 gap-3 animate-fade-in" style={{ animationDelay: "0.04s" }}>
-          {spotlightTeams.map((team) => {
-            const color = getTeamColor(team.teamName);
+          {spotlightTeams.map((team, index) => {
+            const color = getRankingColor(team, index + 1);
             return (
               <div key={team.teamName} className="card !p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Flag country={team.teamName} size="md" />
-                    <p className="text-sm font-semibold text-text-warm">{team.teamName}</p>
+                    <p className="truncate text-sm font-semibold text-text-warm">{team.teamName}</p>
                   </div>
                   <Sparkles size={15} style={{ color }} />
                 </div>
@@ -215,11 +274,11 @@ export default function ProbabilidadesPage() {
 
       {hasRanking ? (
         <section className="mb-4 animate-fade-in" style={{ animationDelay: "0.08s" }}>
-          <SectionTitle icon={TrendingUp} accent="#D4AF37">Top 10</SectionTitle>
+          <SectionTitle icon={TrendingUp} accent="#D4AF37">{rankingTitle}</SectionTitle>
           <div className="card !p-3">
             <div className="space-y-2.5">
               {shortlist.map((item, index) => {
-                const color = getTeamColor(item.teamName);
+                const color = getRankingColor(item, index);
                 const scaledWidth = Math.max(10, (item.probabilityPct / topProbability) * 100);
                 const isLeader = index === 0;
                 return (
@@ -249,7 +308,7 @@ export default function ProbabilidadesPage() {
         </section>
       ) : null}
 
-      {hasRanking && history.length > 1 && historyTeams.length ? (
+      {selectedMarket === DEFAULT_PROBABILITY_MARKET_KEY && hasRanking && history.length > 1 && historyTeams.length ? (
         <section className="mb-6 animate-fade-in" style={{ animationDelay: "0.12s" }}>
           <SectionTitle icon={TrendingUp} accent="#D4AF37">Evolución reciente</SectionTitle>
           <div className="card !p-3.5">

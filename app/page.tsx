@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Activity, BookOpen, ChevronRight, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
@@ -39,10 +40,16 @@ const QUICK_LINKS = [
 ] as const;
 
 export default function HomePage() {
-  const { participants, hasRealParticipants } = useScoredParticipants();
+  const { participants, hasRealParticipants, userTeamsStore } = useScoredParticipants();
   const top3 = participants.slice(0, 3);
   const medalColors = ["#D4AF37", "#C0C0C0", "#CD7F32"];
   const medalBg = ["rgba(212,175,55,0.09)", "rgba(192,192,192,0.07)", "rgba(205,127,50,0.08)"];
+  const submittedStats = useMemo(() => getSubmittedStats(userTeamsStore.entries), [userTeamsStore.entries]);
+  const prizeRows = [
+    { label: "1º clasificado", percentage: 70, amount: submittedStats.prizePool * 0.7 },
+    { label: "2º clasificado", percentage: 20, amount: submittedStats.prizePool * 0.2 },
+    { label: "3º clasificado", percentage: 10, amount: submittedStats.prizePool * 0.1 },
+  ];
 
   return (
     <div className="mx-auto max-w-[640px] px-4 pt-3">
@@ -62,13 +69,13 @@ export default function HomePage() {
 
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: "Partidos", value: "104" },
-              { label: "Selecciones", value: "48" },
-              { label: "Vistas", value: "5" },
+              { label: "Participantes", value: String(submittedStats.participants) },
+              { label: "Premio", value: formatCurrency(submittedStats.prizePool) },
+              { label: "Porras", value: String(submittedStats.porras) },
             ].map((item) => (
               <div key={item.label} className="stat-tile text-center">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{item.label}</p>
-                <p className="mt-1 font-display text-[24px] font-black leading-none text-text-warm">{item.value}</p>
+                <p className="mt-1 font-display text-[22px] font-black leading-none text-text-warm sm:text-[24px]">{item.value}</p>
               </div>
             ))}
           </div>
@@ -148,6 +155,35 @@ export default function HomePage() {
         <Link href="/clasificacion" className="btn btn-ghost mt-3 w-full text-sm no-underline">
           Ver clasificación <ChevronRight size={16} />
         </Link>
+      </section>
+
+      <section className="mb-4 animate-fade-in" style={{ animationDelay: "0.1s" }}>
+        <SectionTitle icon={Trophy} accent="#D4AF37">Premios</SectionTitle>
+        <div className="flex flex-col gap-2">
+          {prizeRows.map((row, index) => (
+            <div
+              key={row.label}
+              className="card flex items-center gap-3 !px-4 !py-3.5"
+              style={{ background: medalBg[index], borderLeft: `3px solid ${medalColors[index]}` }}
+            >
+              <div className="min-w-[34px] text-center">
+                <span className="font-display text-[24px] font-black leading-none" style={{ color: medalColors[index] }}>
+                  {index + 1}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-text-warm">{row.label}</p>
+                <p className="text-[11px] text-text-muted">{row.percentage}% del bote</p>
+              </div>
+              <div className="text-right">
+                <p className="font-display text-[22px] font-black leading-none" style={{ color: medalColors[index] }}>
+                  {formatCurrency(row.amount)}
+                </p>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-text-muted">premio</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       {!hasRealParticipants ? (
@@ -232,6 +268,43 @@ export default function HomePage() {
       </section>
     </div>
   );
+}
+
+function getPorraPrice(count: number) {
+  if (count <= 0) return 0;
+  if (count === 1) return 20;
+  if (count === 2) return 35;
+  return 40;
+}
+
+function getSubmittedStats(entries: Array<{ userId?: string; username?: string }>) {
+  const porrasByParticipant = new Map<string, number>();
+
+  entries.forEach((entry) => {
+    const participantKey = entry.userId || entry.username;
+    if (!participantKey) return;
+    porrasByParticipant.set(participantKey, (porrasByParticipant.get(participantKey) || 0) + 1);
+  });
+
+  const prizePool = Array.from(porrasByParticipant.values()).reduce((total, count) => total + getPorraPrice(count), 0);
+
+  return {
+    participants: porrasByParticipant.size,
+    porras: entries.length,
+    prizePool,
+  };
+}
+
+function formatCurrency(value: number) {
+  const rounded = Number(value.toFixed(2));
+  const hasDecimals = !Number.isInteger(rounded);
+
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: hasDecimals ? 2 : 0,
+  }).format(rounded);
 }
 
 function ScoringRow({ label, pts, note, accent }: { label: string; pts: number; note?: string; accent?: boolean }) {

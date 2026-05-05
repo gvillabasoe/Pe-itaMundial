@@ -36,3 +36,64 @@ export const FEATURED_TEAMS: ProbabilityTeamConfig[] = [
 export const FEATURED_TEAM_BY_NAME = Object.fromEntries(FEATURED_TEAMS.map((team) => [team.teamName, team])) as Record<string, ProbabilityTeamConfig>;
 
 export const FEATURED_TEAM_BY_KEY = Object.fromEntries(FEATURED_TEAMS.map((team) => [team.teamKey, team])) as Record<string, ProbabilityTeamConfig>;
+
+const FEATURED_TEAM_COLORS = Object.fromEntries(FEATURED_TEAMS.map((team) => [team.teamName, team.color])) as Record<string, string>;
+
+export const PROBABILITY_TEAM_COLORS: Record<string, string> = {
+  ...FEATURED_TEAM_COLORS,
+  "Arabia Saudí": "#006C35",
+  "Argelia": "#006233",
+  "Australia": "#00843D",
+  "Austria": "#ED2939",
+  "Bélgica": "#FAE042",
+  "Bosnia y Herzegovina": "#002395",
+  "Cabo Verde": "#003893",
+  "Canadá": "#D80621",
+  "Catar": "#8A1538",
+  "Chequia": "#D7141A",
+  "Colombia": "#FCD116",
+  "Corea del Sur": "#C60C30",
+  "Costa de Marfil": "#F77F00",
+  "Croacia": "#171796",
+  "Curazao": "#002B7F",
+  "Ecuador": "#FFDD00",
+  "Egipto": "#CE1126",
+  "Escocia": "#005EB8",
+  "Estados Unidos": "#3C3B6E",
+  "Ghana": "#FCD116",
+  "Haití": "#00209F",
+  "Irak": "#CE1126",
+  "Irán": "#239F40",
+  "Japón": "#BC002D",
+  "Jordania": "#007A3D",
+  "Marruecos": "#C1272D",
+  "México": "#006847",
+  "Nueva Zelanda": "#111827",
+  "Panamá": "#005293",
+  "Paraguay": "#D52B1E",
+  "RD Congo": "#007FFF",
+  "Senegal": "#00853F",
+  "Sudáfrica": "#007A4D",
+  "Suecia": "#006AA7",
+  "Suiza": "#D52B1E",
+  "Túnez": "#E70013",
+  "Turquía": "#E30A17",
+  "Uzbekistán": "#0099B5",
+};
+
+const OPEN_MARKET_COLORS = [
+  "#D4AF37",
+  "#C1121F",
+  "#1D4ED8",
+  "#16A34A",
+  "#F48020",
+  "#F0417A",
+  "#6EC6FF",
+  "#98A3B8",
+  "#8B5CF6",
+  "#14B8A6",
+] as const;
+
+export function getProbabilityColorForName(name: string, index = 0): string {
+  return PROBABILITY_TEAM_COLORS[name] || OPEN_MARKET_COLORS[index % OPEN_MARKET_COLORS.length] || "#D4AF37";
+}
