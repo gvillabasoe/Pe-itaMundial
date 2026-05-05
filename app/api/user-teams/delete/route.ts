@@ -21,16 +21,16 @@ export async function POST(request: Request) {
     }
 
     // Verificar que la porra existe y pertenece al userId
-    const existing = await queryDb<{ id: string; user_id: string }>(
+    const result = await queryDb<{ id: string; user_id: string }>(
       "SELECT id, user_id FROM user_teams WHERE id = $1 LIMIT 1",
       [teamId]
     );
 
-    if (existing.length === 0) {
+    if (result.rows.length === 0) {
       return NextResponse.json({ error: "Porra no encontrada" }, { status: 404 });
     }
 
-    const row = existing[0];
+    const row = result.rows[0];
     const isOwner = row.user_id === userId;
 
     // Comprobar si hay cookie de admin para permitir eliminar cualquier porra
