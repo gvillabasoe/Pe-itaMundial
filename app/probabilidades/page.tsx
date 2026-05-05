@@ -6,7 +6,7 @@ import Image from "next/image";
 import { AlertCircle, Crown, RefreshCw, Sparkles, TrendingUp, Wifi, WifiOff } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CountryWithFlag, EmptyState, Flag, SectionTitle } from "@/components/ui";
-import { DEFAULT_PROBABILITY_MARKET_KEY, PROBABILITY_MARKETS } from "@/lib/probabilities/markets";
+import { DEFAULT_PROBABILITY_MARKET_KEY, GROUPS_PROBABILITY_MARKET_KEY, PROBABILITY_MARKETS } from "@/lib/probabilities/markets";
 import { FEATURED_TEAM_BY_NAME, FEATURED_TEAMS, getProbabilityColorForName } from "@/lib/probabilities/team-config";
 
 interface ProbabilityRankingItem {
@@ -17,6 +17,18 @@ interface ProbabilityRankingItem {
   color?: string;
 }
 
+interface ProbabilityGroupResponse {
+  group: string;
+  marketKey: string;
+  marketDisplayName: string;
+  marketPolymarketLabel: string;
+  marketLabel: string | null;
+  marketMode: "multi" | "binary" | "mixed" | "unknown";
+  stale: boolean;
+  ranking: ProbabilityRankingItem[];
+  error?: string;
+}
+
 interface ProbabilityResponse {
   source: "polymarket";
   updatedAt: string;
@@ -24,12 +36,13 @@ interface ProbabilityResponse {
   marketKey: string;
   marketDisplayName: string;
   marketPolymarketLabel: string;
-  marketKind: "team" | "open";
+  marketKind: "team" | "open" | "groups";
   marketGroup: string | null;
   marketMode: "multi" | "binary" | "mixed" | "unknown";
   marketLabel: string | null;
   featured: Record<string, number | null>;
   ranking: ProbabilityRankingItem[];
+  groups?: ProbabilityGroupResponse[];
   error?: string;
 }
 
@@ -59,12 +72,18 @@ function formatUpdatedAt(value?: string | null) {
   });
 }
 
+function getDefaultTeamColor(teamName: string) {
+  return FEATURED_TEAM_BY_NAME[teamName]?.color || "#D4AF37";
+}
+
 function getTeamColor(teamName: string, index = 0) {
   return FEATURED_TEAM_BY_NAME[teamName]?.color || getProbabilityColorForName(teamName, index);
 }
 
-function getRankingColor(item: ProbabilityRankingItem | null | undefined, index = 0) {
-  return item?.color || getTeamColor(item?.teamName || "", index);
+function getRankingColor(item: ProbabilityRankingItem | null | undefined, index = 0, useDefaultWinnerColors = false) {
+  const teamName = item?.teamName || "";
+  if (useDefaultWinnerColors) return getDefaultTeamColor(teamName);
+  return item?.color || getTeamColor(teamName, index);
 }
 
 export default function ProbabilidadesPage() {
@@ -108,28 +127,34 @@ export default function ProbabilidadesPage() {
     });
   }, [data, selectedMarket]);
 
-  const ranking = data?.ranking ?? [];
+  const isDefaultMarket = selectedMarket === DEFAULT_PROBABILITY_MARKET_KEY;
+  const isGroupsMarket = selectedMarket === GROUPS_PROBABILITY_MARKET_KEY || data?.marketKind === "groups";
+  const isOpenMarket = data?.marketKind === "open";
+  const groups = data?.groups ?? [];
+  const hasGroupRankings = groups.some((group) => group.ranking.length > 0);
+
+  const ranking = isGroupsMarket ? [] : data?.ranking ?? [];
   const heroTeam = ranking[0] ?? null;
-  const shortlist = data?.marketGroup ? ranking : ranking.slice(0, 10);
+  const shortlist = ranking.slice(0, 10);
   const spotlightTeams = ranking.slice(1, 5);
   const topProbability = heroTeam?.probabilityPct || 1;
-  const hasRanking = shortlist.length > 0;
-  const heroColor = getRankingColor(heroTeam, 0);
-  const leaderLabel = data?.marketGroup
-    ? "Favorita del grupo"
-    : data?.marketKind === "open"
-      ? "Líder del mercado"
-      : "Favorita del mercado";
-  const probabilityLabel = data?.marketKind === "open" ? "Cuota implícita" : "Probabilidad";
-  const rankingTitle = data?.marketGroup ? `Grupo ${data.marketGroup}` : "Top 10";
+  const hasRanking = !isGroupsMarket && shortlist.length > 0;
+  const heroColor = getRankingColor(heroTeam, 0, isDefaultMarket);
+  const leaderLabel = data?.marketKind === "open" ? "Líder del mercado" : "Favorita del mercado";
 
   const state = isLoading && !data
     ? "loading"
-    : hasRanking
-      ? data?.stale
-        ? "stale"
-        : "ok"
-      : "empty";
+    : isGroupsMarket
+      ? hasGroupRankings
+        ? data?.stale
+          ? "stale"
+          : "ok"
+        : "empty"
+      : hasRanking
+        ? data?.stale
+          ? "stale"
+          : "ok"
+        : "empty";
 
   const historyTeams = useMemo(() => {
     return HISTORY_TEAMS.filter((team) => history.some((point) => point[team.teamKey] != null));
@@ -203,7 +228,7 @@ export default function ProbabilidadesPage() {
       {state === "empty" ? (
         <EmptyState
           title={`${activeMarket.label} no disponible`}
-          text={data?.error || error?.message || "Polymarket no ha devuelto datos válidos."}
+          text={data?.error || error?.message || "Sin datos disponibles"}
           icon={AlertCircle}
           action={
             <button type="button" className="btn btn-ghost" onClick={() => void mutate()}>
@@ -211,6 +236,14 @@ export default function ProbabilidadesPage() {
             </button>
           }
         />
+      ) : null}
+
+      {isGroupsMarket && hasGroupRankings ? (
+        <div className="mb-6 space-y-6 animate-fade-in" style={{ animationDelay: "0.04s" }}>
+          {groups.map((group) => (
+            <GroupRankingSection key={group.group} group={group} />
+          ))}
+        </div>
       ) : null}
 
       {hasRanking && heroTeam ? (
@@ -221,14 +254,20 @@ export default function ProbabilidadesPage() {
                 <Crown size={12} style={{ color: heroColor }} />
                 {leaderLabel}
               </div>
-              <CountryWithFlag
-                country={heroTeam.teamName}
-                size="lg"
-                textClassName="font-display text-[34px] font-black leading-none text-text-warm sm:text-[42px]"
-              />
+              {isOpenMarket ? (
+                <span className="font-display text-[34px] font-black leading-none text-text-warm sm:text-[42px]">
+                  {heroTeam.teamName}
+                </span>
+              ) : (
+                <CountryWithFlag
+                  country={heroTeam.teamName}
+                  size="lg"
+                  textClassName="font-display text-[34px] font-black leading-none text-text-warm sm:text-[42px]"
+                />
+              )}
             </div>
             <div className="rounded-[24px] border border-[rgb(var(--divider)/0.16)] bg-[rgb(var(--bg-2)/0.72)] px-5 py-4 text-center shadow-[0_18px_32px_rgba(var(--shadow-color)/0.16)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">{probabilityLabel}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">Probabilidad</p>
               <p className="font-display text-[44px] font-black leading-none" style={{ color: heroColor }}>
                 {formatProbability(heroTeam.probabilityPct)}
                 <span className="ml-1 text-[22px] text-text-muted">%</span>
@@ -238,7 +277,6 @@ export default function ProbabilidadesPage() {
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
             <span className="badge badge-muted">Actualizado {formatUpdatedAt(data?.updatedAt)}</span>
-            <span className="badge badge-muted">{data?.marketDisplayName || activeMarket.label}</span>
             {data?.marketLabel ? (
               <span className="badge badge-muted">
                 {data.marketMode === "multi" ? "Mercado global" : data.marketMode === "binary" ? "Mercados binarios" : "Modo mixto"}
@@ -252,12 +290,12 @@ export default function ProbabilidadesPage() {
       {hasRanking && spotlightTeams.length ? (
         <section className="mb-4 grid grid-cols-2 gap-3 animate-fade-in" style={{ animationDelay: "0.04s" }}>
           {spotlightTeams.map((team, index) => {
-            const color = getRankingColor(team, index + 1);
+            const color = getRankingColor(team, index + 1, isDefaultMarket);
             return (
               <div key={team.teamName} className="card !p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <Flag country={team.teamName} size="md" />
+                    {isOpenMarket ? null : <Flag country={team.teamName} size="md" />}
                     <p className="truncate text-sm font-semibold text-text-warm">{team.teamName}</p>
                   </div>
                   <Sparkles size={15} style={{ color }} />
@@ -274,11 +312,11 @@ export default function ProbabilidadesPage() {
 
       {hasRanking ? (
         <section className="mb-4 animate-fade-in" style={{ animationDelay: "0.08s" }}>
-          <SectionTitle icon={TrendingUp} accent="#D4AF37">{rankingTitle}</SectionTitle>
+          <SectionTitle icon={TrendingUp} accent="#D4AF37">Top 10</SectionTitle>
           <div className="card !p-3">
             <div className="space-y-2.5">
               {shortlist.map((item, index) => {
-                const color = getRankingColor(item, index);
+                const color = getRankingColor(item, index, isDefaultMarket);
                 const scaledWidth = Math.max(10, (item.probabilityPct / topProbability) * 100);
                 const isLeader = index === 0;
                 return (
@@ -291,7 +329,7 @@ export default function ProbabilidadesPage() {
                       <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[rgb(var(--divider)/0.14)] bg-[rgb(var(--bg-3)/0.92)] font-display text-sm font-black text-text-muted">
                         {index + 1}
                       </span>
-                      <Flag country={item.teamName} size="sm" />
+                      {isOpenMarket ? null : <Flag country={item.teamName} size="sm" />}
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-warm">{item.teamName}</span>
                       <span className="font-display text-base font-black" style={{ color }}>
                         {formatProbability(item.probabilityPct)}%
@@ -358,5 +396,49 @@ export default function ProbabilidadesPage() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+function GroupRankingSection({ group }: { group: ProbabilityGroupResponse }) {
+  const topProbability = group.ranking[0]?.probabilityPct || 1;
+
+  return (
+    <section>
+      <SectionTitle icon={TrendingUp} accent="#D4AF37">Grupo {group.group}</SectionTitle>
+      <div className="card !p-4 sm:!p-5">
+        {group.ranking.length ? (
+          <div className="space-y-4">
+            {group.ranking.map((item, index) => {
+              const color = getRankingColor(item, index);
+              const scaledWidth = Math.max(10, (item.probabilityPct / topProbability) * 100);
+              const isLeader = index === 0;
+              return (
+                <div
+                  key={`${group.group}-${item.teamName}-${index}`}
+                  className="rounded-[24px] border border-[rgb(var(--divider)/0.12)] bg-[rgb(var(--bg-2)/0.7)] px-5 py-5"
+                  style={isLeader ? { borderColor: `${color}33`, background: `linear-gradient(135deg, ${color}14, rgb(var(--bg-2)/0.72))` } : undefined}
+                >
+                  <div className="mb-5 flex items-center gap-4">
+                    <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[rgb(var(--divider)/0.14)] bg-[rgb(var(--bg-3)/0.92)] font-display text-lg font-black text-text-muted">
+                      {index + 1}
+                    </span>
+                    <Flag country={item.teamName} size="md" />
+                    <span className="min-w-0 flex-1 truncate text-lg font-bold text-text-warm">{item.teamName}</span>
+                    <span className="font-display text-2xl font-black" style={{ color }}>
+                      {formatProbability(item.probabilityPct)}%
+                    </span>
+                  </div>
+                  <div className="h-3.5 overflow-hidden rounded-full border border-[rgb(var(--divider)/0.08)] bg-[rgb(var(--bg-3)/0.9)]">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${scaledWidth}%`, background: color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-sm text-text-muted">Sin datos disponibles</p>
+        )}
+      </div>
+    </section>
   );
 }

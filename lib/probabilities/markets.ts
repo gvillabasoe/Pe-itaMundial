@@ -1,4 +1,4 @@
-export type ProbabilityMarketKind = "team" | "open";
+export type ProbabilityMarketKind = "team" | "open" | "groups";
 
 export interface ProbabilityMarketDefinition {
   key: string;
@@ -6,6 +6,7 @@ export interface ProbabilityMarketDefinition {
   polymarketLabel: string;
   kind: ProbabilityMarketKind;
   group?: string;
+  eventSlug?: string;
   queries: readonly string[];
   requiredTerms: readonly string[];
   bonusTerms?: readonly string[];
@@ -14,24 +15,22 @@ export interface ProbabilityMarketDefinition {
   minDisplayProbability?: number;
 }
 
-const GROUP_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const;
+export const GROUP_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const;
 
 export const DEFAULT_PROBABILITY_MARKET_KEY = "world-cup-winner";
+export const GROUPS_PROBABILITY_MARKET_KEY = "groups";
 
-const groupMarkets = GROUP_LETTERS.map((group) => ({
+export const GROUP_PROBABILITY_MARKETS: ProbabilityMarketDefinition[] = GROUP_LETTERS.map((group) => ({
   key: `group-${group.toLowerCase()}-winner`,
-  label: `Ganador Grupo ${group}`,
+  label: `Grupo ${group}`,
   polymarketLabel: `FIFA World Cup Group ${group} Winner`,
   kind: "team" as const,
   group,
-  queries: [
-    `FIFA World Cup Group ${group} Winner`,
-    `2026 FIFA World Cup Group ${group} Winner`,
-    `World Cup Group ${group} Winner`,
-  ],
-  requiredTerms: ["world cup", `group ${group.toLowerCase()}`, "winner"],
-  bonusTerms: ["2026", "fifa"],
-  excludeTerms: ["top goalscorer", "most assists", "most assits", "clean sheets", "cleen sheets", "golden boot"],
+  eventSlug: `fifa-world-cup-group-${group.toLowerCase()}-winner`,
+  queries: [],
+  requiredTerms: ["fifa world cup", `group ${group.toLowerCase()}`, "winner"],
+  bonusTerms: ["2026", "fifa", "group", "winner"],
+  excludeTerms: ["club world cup", "mundial de clubes", "copa america", "top goalscorer", "most assists", "most assits", "clean sheets", "cleen sheets", "golden boot"],
   maxItems: 4,
   minDisplayProbability: 0,
 }));
@@ -44,14 +43,13 @@ export const PROBABILITY_MARKETS: ProbabilityMarketDefinition[] = [
     kind: "team",
     queries: [
       "fifa world cup 2026 winner",
-      "2026 fifa world cup winner",
       "world cup 2026 winner",
       "2026 world cup champion",
       "2026 fifa world cup",
     ],
     requiredTerms: ["world cup"],
     bonusTerms: ["2026", "winner", "champion", "fifa", "outright"],
-    excludeTerms: ["group", "top goalscorer", "most assists", "most assits", "clean sheets", "cleen sheets", "golden boot", "golden glove"],
+    excludeTerms: ["group", "top goalscorer", "most assists", "most assits", "clean sheets", "cleen sheets", "golden boot", "golden glove", "club world cup", "mundial de clubes"],
     maxItems: 10,
     minDisplayProbability: 2,
   },
@@ -60,53 +58,52 @@ export const PROBABILITY_MARKETS: ProbabilityMarketDefinition[] = [
     label: "Máximo Goleador",
     polymarketLabel: "2026 FIFA World Cup: Top Goalscorer",
     kind: "open",
-    queries: [
-      "2026 FIFA World Cup Top Goalscorer",
-      "FIFA World Cup Top Goalscorer",
-      "World Cup 2026 Top Goalscorer",
-      "World Cup 2026 Golden Boot",
-    ],
-    requiredTerms: ["world cup"],
+    eventSlug: "2026-fifa-world-cup-top-goalscorer",
+    queries: [],
+    requiredTerms: ["2026 fifa world cup", "top goalscorer"],
     bonusTerms: ["top goalscorer", "goalscorer", "golden boot", "2026", "fifa"],
-    excludeTerms: ["group", "winner", "most assists", "most assits", "clean sheets", "cleen sheets", "golden glove"],
+    excludeTerms: ["club world cup", "mundial de clubes", "nation of top goalscorer", "top scorer nation", "top scorer (nation)", "group", "winner", "most assists", "most assits", "clean sheets", "cleen sheets", "golden glove"],
     maxItems: 10,
-    minDisplayProbability: 1,
+    minDisplayProbability: 0,
   },
   {
     key: "most-assists",
     label: "Máximo Asistidor",
     polymarketLabel: "FIFA World Cup: Most Assists",
     kind: "open",
-    queries: [
-      "FIFA World Cup Most Assists",
-      "FIFA World Cup Most Assits",
-      "World Cup 2026 Most Assists",
-      "2026 FIFA World Cup Most Assists",
-    ],
-    requiredTerms: ["world cup"],
+    eventSlug: "fifa-world-cup-most-assists",
+    queries: [],
+    requiredTerms: ["fifa world cup", "most assists"],
     bonusTerms: ["most assists", "most assits", "assists", "assits", "2026", "fifa"],
-    excludeTerms: ["group", "winner", "top goalscorer", "goalscorer", "clean sheets", "cleen sheets", "golden boot", "golden glove"],
+    excludeTerms: ["club world cup", "mundial de clubes", "group", "winner", "top goalscorer", "goalscorer", "clean sheets", "cleen sheets", "golden boot", "golden glove"],
     maxItems: 10,
-    minDisplayProbability: 1,
+    minDisplayProbability: 0,
   },
   {
     key: "most-clean-sheets-gk",
     label: "Portero menos goleado",
     polymarketLabel: "FIFA World Cup: Most Clean Sheets (GK)",
     kind: "open",
-    queries: [
-      "FIFA World Cup Most Clean Sheets GK",
-      "FIFA World Cup Most Cleen Sheets GK",
-      "World Cup 2026 Most Clean Sheets Goalkeeper",
-      "2026 FIFA World Cup Most Clean Sheets",
-    ],
-    requiredTerms: ["world cup"],
+    eventSlug: "fifa-world-cup-most-clean-sheets-gk",
+    queries: [],
+    requiredTerms: ["fifa world cup", "most clean sheets"],
     bonusTerms: ["most clean sheets", "most cleen sheets", "clean sheets", "cleen sheets", "goalkeeper", "keeper", "gk", "golden glove", "2026", "fifa"],
-    excludeTerms: ["group", "winner", "top goalscorer", "goalscorer", "most assists", "most assits", "golden boot"],
+    excludeTerms: ["club world cup", "mundial de clubes", "group", "winner", "top goalscorer", "goalscorer", "most assists", "most assits", "golden boot"],
     maxItems: 10,
-    minDisplayProbability: 1,
+    minDisplayProbability: 0,
   },
-  ...groupMarkets,
+  {
+    key: GROUPS_PROBABILITY_MARKET_KEY,
+    label: "Grupos",
+    polymarketLabel: "FIFA World Cup Group Winners",
+    kind: "groups",
+    queries: [],
+    requiredTerms: ["fifa world cup", "group", "winner"],
+    bonusTerms: ["2026", "fifa", "group", "winner"],
+    excludeTerms: ["club world cup", "mundial de clubes", "copa america"],
+    maxItems: 4,
+    minDisplayProbability: 0,
+  },
 ];
 
 export const PROBABILITY_MARKET_BY_KEY = Object.fromEntries(

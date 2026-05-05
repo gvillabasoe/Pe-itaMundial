@@ -7,7 +7,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const marketKey = url.searchParams.get("market");
   const snapshot = await fetchPolymarketSnapshot(marketKey);
-  const status = snapshot.ranking.length > 0 ? 200 : 503;
+  const hasRanking = snapshot.ranking.length > 0 || Boolean(snapshot.groups?.some((group) => group.ranking.length > 0));
+  const status = hasRanking ? 200 : 503;
 
   return NextResponse.json(snapshot, {
     status,
