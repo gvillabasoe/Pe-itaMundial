@@ -1,23 +1,19 @@
 import { NextResponse } from "next/server";
-import { scrypt as scryptCb, randomBytes, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
+import { randomBytes, scryptSync } from "node:crypto";
 import { queryDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const scryptAsync = promisify(scryptCb);
-
-// Solo accesible si hay cookie de admin
 function isAdmin(request: Request) {
   const cookie = request.headers.get("cookie") || "";
   return cookie.includes("admin_session=1");
 }
 
-async function hashPassword(password: string): Promise<string> {
+function hashPassword(password: string): string {
   const salt = randomBytes(16);
   const N = 16384, r = 8, p = 1, keyLen = 64;
-  const derived = (await scryptAsync(password, salt, keyLen, { N, r, p })) as Buffer;
+  const derived = scryptSync(password, salt, keyLen, { N, r, p });
   return `scrypt$${N}$${r}$${p}$${salt.toString("base64")}$${derived.toString("base64")}`;
 }
 
@@ -52,7 +48,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Comprobar si ya existe
     const existing = await queryDb<{ id: string }>(
       "SELECT id FROM users WHERE lower(username) = $1 LIMIT 1",
       [username]
@@ -61,7 +56,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Ese nombre de usuario ya existe" }, { status: 409 });
     }
 
-    const passwordHash = await hashPassword(password);
+    const passwordHash = hashPassword(password);
     const userId = `u_${username}_${Date.now()}`;
 
     await queryDb(
