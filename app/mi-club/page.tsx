@@ -78,8 +78,8 @@ function calculateTeamProgress(team: Team): PorraProgress {
 // ════════════════════════════════════════════════════════════
 
 export default function MiClubPage() {
-  const { user, login, logout, favorites, toggleFavorite } = useAuth();
-  if (!user) return <LoginView onLogin={login} />;
+  const { user, loginAsync, logout, favorites, toggleFavorite } = useAuth();
+  if (!user) return <LoginView onLogin={loginAsync} />;
   return (
     <AuthenticatedMiClub
       user={user} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}
@@ -174,20 +174,26 @@ function AuthenticatedMiClub({
 // LOGIN VIEW — con acceso de admin restaurado
 // ════════════════════════════════════════════════════════════
 
-function LoginView({ onLogin }: { onLogin: (username: string, password: string) => boolean }) {
+function LoginView({ onLogin }: { onLogin: (username: string, password: string) => Promise<boolean> }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handle = () => {
+  const handle = async () => {
     if (!username || !password) { setError("Completa los campos"); return; }
-    setLoading(true); setError("");
-    window.setTimeout(() => {
-      if (!onLogin(username, password)) setError("Credenciales incorrectas");
+    setLoading(true);
+    setError("");
+    try {
+      const ok = await onLogin(username, password);
+      // Solo mostramos error si el login terminó y falló
+      if (!ok) setError("Credenciales incorrectas");
+    } catch {
+      setError("Error de conexión. Inténtalo de nuevo.");
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
   return (
@@ -204,14 +210,14 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
         <div className="mb-3 mt-6 text-left">
           <label className="mb-1 block text-[11px] text-text-muted">@usuario</label>
           <input className="input-field" placeholder="@usuario" value={username}
-            onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handle()} />
+            onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void handle()} />
         </div>
         <div className="mb-4 text-left">
           <label className="mb-1 block text-[11px] text-text-muted">Contraseña</label>
           <div className="relative">
             <input className="input-field !pr-10" type={showPass ? "text" : "password"}
               placeholder="••••••••" value={password}
-              onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handle()} />
+              onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void handle()} />
             <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
               onClick={() => setShowPass((v) => !v)}>
               {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -219,7 +225,7 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
           </div>
         </div>
         {error && <p className="mb-4 text-sm text-danger">{error}</p>}
-        <button className="btn btn-primary w-full" onClick={handle} disabled={loading}>
+        <button className="btn btn-primary w-full" onClick={() => void handle()} disabled={loading}>
           {loading ? "Entrando..." : "Entrar"}
         </button>
 
