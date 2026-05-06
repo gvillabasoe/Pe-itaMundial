@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { randomBytes, scryptSync } from "node:crypto";
 import { queryDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function isAdmin(request: Request) {
-  const cookie = request.headers.get("cookie") || "";
-  return cookie.includes("admin_session=1");
+// ════════════════════════════════════════════════════════════
+// En Next.js 14 App Router, los Route Handlers deben usar
+// cookies() de next/headers para leer cookies de forma fiable.
+// request.headers.get("cookie") no funciona correctamente en
+// este contexto — de ahí el error "No autorizado".
+// ════════════════════════════════════════════════════════════
+
+function isAdmin(): boolean {
+  try {
+    const cookieStore = cookies();
+    return cookieStore.get("admin_session")?.value === "1";
+  } catch {
+    return false;
+  }
 }
 
 function hashPassword(password: string): string {
@@ -18,7 +30,7 @@ function hashPassword(password: string): string {
 }
 
 export async function POST(request: Request) {
-  if (!isAdmin(request)) {
+  if (!isAdmin()) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -48,6 +60,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Comprobar si ya existe
     const existing = await queryDb<{ id: string }>(
       "SELECT id FROM users WHERE lower(username) = $1 LIMIT 1",
       [username]
@@ -71,6 +84,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[/api/admin/users/create]", error);
-    return NextResponse.json({ error: "Error al crear el usuario" }, { status: 500 });
+    return NextResponse.json({ error: "Error al crear el usuario en la BBDD" }, { status: 500 });
   }
 }
