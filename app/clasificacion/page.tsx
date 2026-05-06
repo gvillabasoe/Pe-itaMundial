@@ -1,16 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { BarChart3, ChevronDown, ChevronUp, Search, Star, X } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronUp, Lock, Search, Star, X } from "lucide-react";
 import {
-  CountryWithFlag,
-  EmptyState,
-  Flag,
-  GroupBadge,
-  InitialsAvatar,
-  Medal,
-  PickChip,
-  Skeleton,
+  CountryWithFlag, EmptyState, Flag, GroupBadge,
+  InitialsAvatar, Medal, PickChip, Skeleton,
 } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
 import { FIXTURES, GROUPS, type Team } from "@/lib/data";
@@ -24,15 +19,30 @@ export default function ClasificacionPage() {
   const [search, setSearch] = useState("");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
+  // ── Bloqueado hasta iniciar sesión — mismo patrón que Versus ──
+  if (!user) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <div className="card max-w-[320px] text-center !p-8 animate-fade-in">
+          <Lock size={36} className="mx-auto mb-3 text-accent-clasificacion" />
+          <h2 className="mb-1 font-display text-xl font-extrabold text-text-warm">Acceso restringido</h2>
+          <p className="mb-4 text-sm text-text-muted">Inicia sesión para ver el ranking</p>
+          <Link href="/mi-club" className="btn no-underline"
+            style={{ background: "rgb(var(--accent-clasificacion))", color: "white" }}>
+            Entrar a Mi Club
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const filtered = useMemo(() => {
     let list = [...participants];
-    if (filter === "mine" && user) list = list.filter((p) => p.userId === user.id);
+    if (filter === "mine") list = list.filter((p) => p.userId === user.id || p.username === user.username);
     else if (filter === "top10") list = participants.slice(0, 10);
     else if (filter === "tied") {
       const counts: Record<number, number> = {};
-      participants.forEach((p) => {
-        counts[p.totalPoints] = (counts[p.totalPoints] || 0) + 1;
-      });
+      participants.forEach((p) => { counts[p.totalPoints] = (counts[p.totalPoints] || 0) + 1; });
       list = participants.filter((p) => counts[p.totalPoints] > 1);
     }
     if (search.trim()) {
@@ -55,13 +65,8 @@ export default function ClasificacionPage() {
 
       <div className="relative mb-3">
         <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" aria-hidden="true" />
-        <input
-          className="input-field !pl-9"
-          placeholder="Buscar equipo o jugador..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Buscar en la clasificación"
-        />
+        <input className="input-field !pl-9" placeholder="Buscar equipo o jugador..."
+          value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Buscar en la clasificación" />
       </div>
 
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
@@ -71,12 +76,8 @@ export default function ClasificacionPage() {
           { key: "top10", label: "Top 10" },
           { key: "tied", label: "Empatados" },
         ].map((f) => (
-          <button
-            key={f.key}
-            className={`pill ${filter === f.key ? "active" : ""}`}
-            onClick={() => { if (f.key === "mine" && !user) return; setFilter(f.key); }}
-            disabled={f.key === "mine" && !user}
-          >
+          <button key={f.key} className={`pill ${filter === f.key ? "active" : ""}`}
+            onClick={() => setFilter(f.key)}>
             {f.label}
           </button>
         ))}
@@ -89,16 +90,12 @@ export default function ClasificacionPage() {
           </h3>
           <div className="flex flex-col gap-1">
             {favoriteTeams.map((p) => (
-              <ParticipantRow
-                key={`fav-${p.id}`}
-                participant={p}
-                isMine={user?.id === p.userId}
-                isFavorite
-                onToggleFavorite={() => user && toggleFavorite(p.id)}
+              <ParticipantRow key={`fav-${p.id}`} participant={p}
+                isMine={user?.id === p.userId || user?.username === p.username}
+                isFavorite onToggleFavorite={() => user && toggleFavorite(p.id)}
                 onOpen={() => setSelectedTeam(p)}
                 expanded={expandedRow === `fav-${p.id}`}
-                onToggleExpand={() => setExpandedRow(expandedRow === `fav-${p.id}` ? null : `fav-${p.id}`)}
-              />
+                onToggleExpand={() => setExpandedRow(expandedRow === `fav-${p.id}` ? null : `fav-${p.id}`)} />
             ))}
           </div>
         </section>
@@ -106,42 +103,31 @@ export default function ClasificacionPage() {
 
       {isLoading ? (
         <div className="flex flex-col gap-1.5">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} style={{ height: 56 }} />
-          ))}
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} style={{ height: 56 }} />)}
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState text="Sin resultados" icon={BarChart3} />
       ) : (
         <div className="flex flex-col gap-1">
           {filtered.map((p) => (
-            <ParticipantRow
-              key={p.id}
-              participant={p}
-              isMine={user?.id === p.userId}
+            <ParticipantRow key={p.id} participant={p}
+              isMine={user?.id === p.userId || user?.username === p.username}
               isFavorite={favorites.includes(p.id)}
               onToggleFavorite={() => user && toggleFavorite(p.id)}
               onOpen={() => setSelectedTeam(p)}
               expanded={expandedRow === p.id}
-              onToggleExpand={() => setExpandedRow(expandedRow === p.id ? null : p.id)}
-            />
+              onToggleExpand={() => setExpandedRow(expandedRow === p.id ? null : p.id)} />
           ))}
         </div>
       )}
 
       {selectedTeam && (
-        <div
-          className="fixed inset-0 z-[200] flex items-end justify-center"
+        <div className="fixed inset-0 z-[200] flex items-end justify-center"
           style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}
-          onClick={() => setSelectedTeam(null)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="rounded-t-3xl w-full max-w-[640px] max-h-[88vh] overflow-y-auto p-5 animate-slide-up bg-bg-1"
+          onClick={() => setSelectedTeam(null)} role="dialog" aria-modal="true">
+          <div className="rounded-t-3xl w-full max-w-[640px] max-h-[88vh] overflow-y-auto p-5 animate-slide-up bg-bg-1"
             style={{ border: "1px solid rgb(var(--border-default))" }}
-            onClick={(e) => e.stopPropagation()}
-          >
+            onClick={(e) => e.stopPropagation()}>
             <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ background: "rgb(var(--border-default))" }} />
             <ParticipantDetail team={selectedTeam} onClose={() => setSelectedTeam(null)} />
           </div>
@@ -151,9 +137,7 @@ export default function ClasificacionPage() {
   );
 }
 
-function ParticipantRow({
-  participant, isMine, isFavorite, onToggleFavorite, onOpen, expanded, onToggleExpand,
-}: {
+function ParticipantRow({ participant, isMine, isFavorite, onToggleFavorite, onOpen, expanded, onToggleExpand }: {
   participant: Team; isMine: boolean; isFavorite: boolean;
   onToggleFavorite: () => void; onOpen: () => void;
   expanded: boolean; onToggleExpand: () => void;
@@ -163,66 +147,46 @@ function ParticipantRow({
 
   return (
     <div className="flex flex-col">
-      <div
-        className="card flex items-center gap-2.5 !py-3 !px-3.5 cursor-pointer animate-fade-in"
+      <div className="card flex items-center gap-2.5 !py-3 !px-3.5 cursor-pointer animate-fade-in"
         style={{
           borderLeft: hasMedal
             ? `3px solid ${rank === 1 ? "#C99625" : rank === 2 ? "#9CA3AF" : "#A66830"}`
             : isMine ? "3px solid rgb(var(--accent-participante))" : "3px solid transparent",
           background: isMine ? "rgba(63,157,78,0.04)" : undefined,
         }}
-        onClick={onOpen}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
-      >
+        onClick={onOpen} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}>
         <div className="flex items-center gap-1.5 min-w-[36px]">
-          {hasMedal ? (
-            <Medal rank={rank} />
-          ) : (
+          {hasMedal ? <Medal rank={rank} /> : (
             <span className="font-display text-sm font-extrabold text-text-faint min-w-[20px] text-center">{rank}</span>
           )}
         </div>
-
         <InitialsAvatar name={participant.name} size={36} />
-
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-text-primary truncate">{participant.name}</p>
           <p className="text-[10px] text-text-muted">@{participant.username}</p>
         </div>
-
         <div className="flex items-center gap-2">
           <div className="text-right">
             <span className="font-display text-base font-bold text-text-warm tabular-nums">{participant.totalPoints}</span>
             <span className="text-[9px] text-text-muted ml-0.5">pts</span>
           </div>
-
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
+          <button onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
             className="p-1.5 bg-transparent border-none cursor-pointer rounded-md hover:bg-bg-2 transition-colors"
-            aria-label={isFavorite ? "Quitar de favoritos" : "Marcar como favorito"}
-          >
-            {isFavorite
-              ? <Star size={14} fill="rgb(var(--gold))" color="rgb(var(--gold))" />
-              : <Star size={14} className="text-text-faint" />}
+            aria-label={isFavorite ? "Quitar de favoritos" : "Marcar como favorito"}>
+            {isFavorite ? <Star size={14} fill="rgb(var(--gold))" color="rgb(var(--gold))" /> : <Star size={14} className="text-text-faint" />}
           </button>
-
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+          <button onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
             className="p-1.5 bg-transparent border-none cursor-pointer rounded-md hover:bg-bg-2 transition-colors text-text-muted"
-            aria-label={expanded ? "Contraer detalle" : "Expandir detalle"}
-            aria-expanded={expanded}
-          >
+            aria-label={expanded ? "Contraer" : "Expandir"} aria-expanded={expanded}>
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
       </div>
 
       {expanded && (
-        <div
-          className="mt-1 mb-1 px-3.5 py-3 rounded-xl animate-slide-down"
-          style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}
-        >
+        <div className="mt-1 mb-1 px-3.5 py-3 rounded-xl animate-slide-down"
+          style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <BreakdownStat label="Grupos" value={participant.groupPoints} />
             <BreakdownStat label="Eliminatorias" value={participant.finalPhasePoints} />
@@ -254,7 +218,6 @@ function MatchBreakdown({ team }: { team: Team }) {
     });
     return map;
   }, []);
-
   const [openGroup, setOpenGroup] = useState<string | null>(null);
 
   return (
@@ -262,13 +225,8 @@ function MatchBreakdown({ team }: { team: Team }) {
       <p className="text-[9px] uppercase tracking-widest font-semibold text-text-muted mb-2">Picks por grupo</p>
       <div className="flex flex-wrap gap-1 mb-2">
         {Object.keys(groupedFixtures).map((g) => (
-          <button
-            key={g}
-            className={`pill !py-1 !px-2.5 text-[10px] ${openGroup === g ? "active" : ""}`}
-            onClick={() => setOpenGroup(openGroup === g ? null : g)}
-          >
-            {g}
-          </button>
+          <button key={g} className={`pill !py-1 !px-2.5 text-[10px] ${openGroup === g ? "active" : ""}`}
+            onClick={() => setOpenGroup(openGroup === g ? null : g)}>{g}</button>
         ))}
       </div>
       {openGroup && (
@@ -277,25 +235,21 @@ function MatchBreakdown({ team }: { team: Team }) {
             const pick = team.matchPicks?.[fixture.id];
             if (!pick) return null;
             const isDouble = team.doubleMatches?.[openGroup] === fixture.id;
+            const hasScore = typeof pick.home === "number" && typeof pick.away === "number";
             return (
-              <div
-                key={fixture.id}
-                className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg text-[11px]"
-                style={{ background: "rgb(var(--bg-surface))" }}
-              >
+              <div key={fixture.id} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg text-[11px]"
+                style={{ background: "rgb(var(--bg-surface))" }}>
                 <div className="flex items-center gap-1 flex-1 min-w-0">
                   <Flag country={fixture.homeTeam} size="sm" />
                   <span className="truncate">{fixture.homeTeam}</span>
                 </div>
-                <span
-                  className="font-display text-xs font-bold tabular-nums px-2 py-0.5 rounded-md"
+                <span className="font-display text-xs font-bold tabular-nums px-2 py-0.5 rounded-md"
                   style={{
                     background: isDouble ? "rgb(var(--gold-soft))" : "rgb(var(--bg-muted))",
                     color: isDouble ? "rgb(var(--gold))" : "rgb(var(--text-secondary))",
                     border: isDouble ? "1px solid rgba(var(--gold),0.3)" : undefined,
-                  }}
-                >
-                  {pick.home}-{pick.away}
+                  }}>
+                  {hasScore ? `${pick.home}-${pick.away}` : "·-·"}
                 </span>
                 <div className="flex items-center gap-1 flex-1 min-w-0 justify-end">
                   <span className="truncate">{fixture.awayTeam}</span>
@@ -327,14 +281,8 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           <X size={17} />
         </button>
       </div>
-
-      <div
-        className="card-elevated rounded-2xl text-center py-5 mb-4"
-        style={{
-          background: "linear-gradient(135deg, rgba(var(--gold-soft), 1), rgba(var(--bg-surface), 1))",
-          border: "1px solid rgba(var(--gold), 0.18)",
-        }}
-      >
+      <div className="card-elevated rounded-2xl text-center py-5 mb-4"
+        style={{ background: "linear-gradient(135deg, rgba(var(--gold-soft), 1), rgba(var(--bg-surface), 1))", border: "1px solid rgba(var(--gold), 0.18)" }}>
         <p className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Puntos totales</p>
         <p className="font-display text-5xl font-black text-gold tabular-nums">{team.totalPoints}</p>
         <div className="mt-2 flex items-center justify-center gap-2">
@@ -342,7 +290,6 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           <span className="badge badge-gold">#{team.currentRank}</span>
         </div>
       </div>
-
       <div className="grid grid-cols-3 gap-2 mb-4">
         {[
           { label: "Grupos", val: team.groupPoints, color: "rgb(var(--success))" },
@@ -355,7 +302,6 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           </div>
         ))}
       </div>
-
       <div className="grid grid-cols-2 gap-2 mb-4">
         <div className="card flex items-center gap-2.5">
           <Flag country={team.championPick} size="md" />
@@ -372,7 +318,6 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           </div>
         </div>
       </div>
-
       <h4 className="text-[10px] text-text-muted uppercase tracking-widest mb-2">Picks especiales</h4>
       <div className="grid grid-cols-2 gap-1.5">
         {[
@@ -385,10 +330,11 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           { label: "Revelación", val: team.specials.revelacion, isC: true },
           { label: "Decepción", val: team.specials.decepcion, isC: true },
         ].map((s, i) => (
-          <div key={i} className="py-2 px-2.5 rounded-xl" style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}>
+          <div key={i} className="py-2 px-2.5 rounded-xl"
+            style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}>
             <p className="text-[9px] text-text-muted uppercase tracking-wider mb-0.5">{s.label}</p>
             <p className="text-xs font-semibold text-text-primary">
-              {s.isC ? <CountryWithFlag country={String(s.val)} size="sm" /> : s.val}
+              {s.isC ? <CountryWithFlag country={String(s.val)} size="sm" /> : s.val || "—"}
             </p>
           </div>
         ))}

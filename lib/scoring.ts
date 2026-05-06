@@ -1,5 +1,6 @@
 import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, SCORING, type Fixture, type KnockoutPick, type MatchPick, type Team } from "@/lib/data";
 import type { AdminResults, KnockoutRoundKey } from "@/lib/admin-results";
+import { KNOCKOUT_ADMIN_COUNTS } from "@/lib/admin-results";
 import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
 import { normalizeCountryKey } from "@/lib/flags";
 
@@ -12,9 +13,6 @@ function buildMatchKey(homeTeam: string, awayTeam: string) {
 }
 
 // Indexar el schedule oficial en AMBOS sentidos (home|away y away|home).
-// Sin esto, los partidos del mock FIXTURES con orden invertido respecto al
-// schedule oficial no se mapeaban a su matchId, dejando los puntos por
-// resultado exacto en estado "pending" aunque el admin hubiera guardado.
 WORLD_CUP_MATCHES.filter((match) => match.stage === "group").forEach((match) => {
   const matchIdStr = String(match.id);
   WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.set(buildMatchKey(match.homeTeam, match.awayTeam), matchIdStr);
@@ -73,10 +71,14 @@ function isGroupConfigured(group: string, adminResults: AdminResults) {
   return unique.size === 4 && unique.has(1) && unique.has(2) && unique.has(3) && unique.has(4);
 }
 
+// ── FIX: usa KNOCKOUT_ADMIN_COUNTS (32/16/8/4) en lugar de round.count (16/8/4/2).
+// El admin ahora guarda todos los equipos que participan en cada ronda, no solo
+// los ganadores. isRoundConfigured estaba comparando selected.length (32) contra
+// required (16) → siempre false → ningún acierto de knockout puntuaba.
 function isRoundConfigured(roundKey: KnockoutRoundKey, adminResults: AdminResults) {
-  const required = KNOCKOUT_ROUND_DEFS.find((r) => r.key === roundKey)?.count || 0;
+  const required = KNOCKOUT_ADMIN_COUNTS[roundKey] || 0;
   const selected = adminResults.knockoutRounds[roundKey].filter(Boolean);
-  return selected.length === required;
+  return selected.length >= required;
 }
 
 function isSpecialConfigured(value: unknown) {
@@ -102,9 +104,9 @@ function scoreMatchPick(pick: MatchPick, actualHome: number, actualAway: number,
   if (exact) {
     return { points: isDouble ? SCORING.partidoDobleExacto : SCORING.resultadoExactoTotal, status: "correct" as const };
   }
-  const ps = getResultSign(pick.home, pick.away);
-  const as = getResultSign(actualHome, actualAway);
-  if (ps === as) {
+  const ps = getResultSign(pick.home as number, pick.away as number);
+  const as_ = getResultSign(actualHome, actualAway);
+  if (ps === as_) {
     return { points: isDouble ? SCORING.partidoDobleSigno : SCORING.signo, status: "sign" as const };
   }
   return { points: 0, status: "wrong" as const };
@@ -116,6 +118,11 @@ function scoreGroupMatchPicks(team: Team, adminResults: AdminResults) {
   Object.entries(matchPicks).forEach(([fixtureId, pick]) => {
     const actual = resolveGroupMatchResult(fixtureId, adminResults);
     if (!actual) {
+      matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
+      return;
+    }
+    // Si el marcador del pick es null (guardado incompleto), marcar como pendiente
+    if (pick.home === null || pick.away === null) {
       matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
       return;
     }
@@ -145,12 +152,16 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
   const knockoutPicks = cloneKnockoutPicks(team.knockoutPicks);
   KNOCKOUT_ROUND_DEFS.forEach((round) => {
     const configured = isRoundConfigured(round.key, adminResults);
-    const actualTeams = configured ? new Set(adminResults.knockoutRounds[round.key].filter(Boolean)) : new Set<string>();
+    // El set de equipos oficiales para esta ronda (puede contener 32/16/8/4 equipos)
+    const actualTeams = configured
+      ? new Set(adminResults.knockoutRounds[round.key].filter(Boolean))
+      : new Set<string>();
     const seen = new Set<string>();
     knockoutPicks[round.key] = (knockoutPicks[round.key] || []).map((pick) => {
       if (!configured) return { ...pick, points: null, status: "pending" };
       const duplicate = seen.has(pick.country);
       seen.add(pick.country);
+      // El usuario acierta si el equipo que eligió está en el set de participantes de la ronda
       const correct = !duplicate && actualTeams.has(pick.country);
       const pickPoints = correct ? round.pts : 0;
       points += pickPoints;

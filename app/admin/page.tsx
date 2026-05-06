@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Check, ChevronDown, ChevronUp, Clock3, Edit2, LayoutGrid,
-  ListFilter, LogOut, MapPin, Save, Shield, Sparkles, Trash2, Trophy, Users,
+  AlertCircle, Check, ChevronDown, ChevronUp, Clock3, Edit2, Eye, EyeOff,
+  LayoutGrid, ListFilter, LogOut, MapPin, Save, Shield, Sparkles, Trash2,
+  Trophy, UserPlus, Users,
 } from "lucide-react";
 import { CountrySelectionPreview, Flag, GroupBadge, SectionTitle } from "@/components/ui";
 import { MiPorraBuilder } from "@/components/mi-porra-builder";
@@ -12,7 +13,6 @@ import {
   ADMIN_SPECIAL_FIELDS,
   ALL_TEAMS_SORTED,
   KNOCKOUT_ADMIN_COUNTS,
-  KNOCKOUT_COUNTS,
   KNOCKOUT_LABELS,
   createDefaultAdminResults,
   formatAdminSavedAt,
@@ -26,17 +26,13 @@ import { getCityBgColor, getCityColor } from "@/lib/config/regions";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
 import { notifyAdminResultsUpdated, useScoredParticipants } from "@/lib/use-scored-participants";
 
-// ════════════════════════════════════════════════════════════
-// Constantes y helpers
-// ════════════════════════════════════════════════════════════
-
 const GROUP_SLOT_ORDER: Array<Exclude<GroupPositionValue, 0>> = [1, 2, 3, 4];
 const GROUP_SLOT_LABELS: Record<Exclude<GroupPositionValue, 0>, string> = {
   1: "1.º", 2: "2.º", 3: "3.º", 4: "Eliminado",
 };
 
 type ResultsViewMode = "group" | "phase";
-type AdminTab = "resultados" | "porras";
+type AdminTab = "resultados" | "porras" | "usuarios";
 
 type GroupStandingRow = {
   team: string; played: number; win: number; draw: number; lose: number;
@@ -63,7 +59,6 @@ function getRoundUniqueCount(roundKey: KnockoutRoundKey, data: AdminResults) {
   return new Set(data.knockoutRounds[roundKey].filter(Boolean)).size;
 }
 
-// ← Usa KNOCKOUT_ADMIN_COUNTS (32/16/8/4) no el count del usuario (16/8/4/2)
 function isRoundComplete(roundKey: KnockoutRoundKey, data: AdminResults) {
   return getRoundUniqueCount(roundKey, data) === KNOCKOUT_ADMIN_COUNTS[roundKey];
 }
@@ -86,7 +81,6 @@ function computeGroupStandings(group: string, data: AdminResults) {
   const rows = GROUPS[group].reduce<Record<string, GroupStandingRow>>((acc, team) => {
     acc[team] = buildStandingRow(team); return acc;
   }, {});
-
   GROUP_MATCHES_BY_GROUP[group].forEach((match) => {
     const result = data.matchResults[String(match.id)];
     if (typeof result?.home !== "number" || typeof result?.away !== "number") return;
@@ -100,7 +94,6 @@ function computeGroupStandings(group: string, data: AdminResults) {
     else { home.draw += 1; away.draw += 1; home.points += 1; away.points += 1; }
     home.gd = home.gf - home.ga; away.gd = away.gf - away.ga;
   });
-
   return Object.values(rows).sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     if (b.gd !== a.gd) return b.gd - a.gd;
@@ -120,10 +113,6 @@ function getFilteredMatches(mode: ResultsViewMode, selectedGroup: string, select
   return WORLD_CUP_MATCHES.filter((match) => match.stage === selectedStage);
 }
 
-// ════════════════════════════════════════════════════════════
-// PÁGINA PRINCIPAL
-// ════════════════════════════════════════════════════════════
-
 export default function AdminPage() {
   const [form, setForm] = useState<AdminResults>(createDefaultAdminResults());
   const [snapshot, setSnapshot] = useState(serializeAdminResults(createDefaultAdminResults()));
@@ -135,8 +124,6 @@ export default function AdminPage() {
   const [selectedGroup, setSelectedGroup] = useState("A");
   const [selectedStage, setSelectedStage] = useState<MatchStage>("group");
   const [activeTab, setActiveTab] = useState<AdminTab>("resultados");
-
-  // Para la sección de gestión de porras
   const { participants } = useScoredParticipants();
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
 
@@ -171,13 +158,8 @@ export default function AdminPage() {
 
   const dirty = useMemo(() => serializeAdminResults(form) !== snapshot, [form, snapshot]);
   const configuredMatchCount = useMemo(() => countConfiguredMatchResults(form), [form]);
-  const completedGroups = useMemo(
-    () => Object.keys(GROUPS).filter((g) => isGroupComplete(g, form)).length, [form]
-  );
-  const filteredMatches = useMemo(
-    () => getFilteredMatches(resultsMode, selectedGroup, selectedStage),
-    [resultsMode, selectedGroup, selectedStage]
-  );
+  const completedGroups = useMemo(() => Object.keys(GROUPS).filter((g) => isGroupComplete(g, form)).length, [form]);
+  const filteredMatches = useMemo(() => getFilteredMatches(resultsMode, selectedGroup, selectedStage), [resultsMode, selectedGroup, selectedStage]);
 
   const touchForm = () => { setSaveState("idle"); setSaveError(""); };
 
@@ -276,7 +258,6 @@ export default function AdminPage() {
     }
   };
 
-  // ── Si se está editando una porra desde admin ──
   if (editingTeam) {
     return (
       <div className="mx-auto max-w-[920px] px-4 pt-4">
@@ -300,7 +281,6 @@ export default function AdminPage() {
         <div className="space-y-3">
           <div className="skeleton" style={{ height: 96 }} />
           <div className="skeleton" style={{ height: 280 }} />
-          <div className="skeleton" style={{ height: 320 }} />
         </div>
       </div>
     );
@@ -316,41 +296,32 @@ export default function AdminPage() {
               <Shield size={12} /> Admin
             </div>
             <h1 className="page-header__title mt-3">Panel de control</h1>
-            <p className="mt-2 text-sm text-text-muted">
-              Gestiona resultados oficiales, posiciones, eliminatorias y todas las porras.
-            </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="badge badge-muted">{formatAdminSavedAt(form.savedAt)}</span>
-            <span className={`badge ${dirty ? "badge-amber" : "badge-green"}`}>
-              {dirty ? "Cambios pendientes" : "Sincronizado"}
-            </span>
+            <span className={`badge ${dirty ? "badge-amber" : "badge-green"}`}>{dirty ? "Cambios pendientes" : "Sincronizado"}</span>
             <button type="button" className="btn btn-ghost !px-3 !py-2 text-xs" onClick={() => void handleLogout()}>
               <LogOut size={14} /> Cerrar sesión
             </button>
           </div>
         </div>
 
-        {/* Tabs de navegación */}
-        <div className="flex gap-2 mb-5">
-          <button
-            className={`pill ${activeTab === "resultados" ? "active" : ""}`}
-            onClick={() => setActiveTab("resultados")}
-          >
-            <Trophy size={14} /> Resultados oficiales
+        {/* Tabs */}
+        <div className="flex gap-2 mb-5 overflow-x-auto">
+          <button className={`pill whitespace-nowrap ${activeTab === "resultados" ? "active" : ""}`} onClick={() => setActiveTab("resultados")}>
+            <Trophy size={14} /> Resultados
           </button>
-          <button
-            className={`pill ${activeTab === "porras" ? "active" : ""}`}
-            onClick={() => setActiveTab("porras")}
-          >
-            <Users size={14} /> Gestionar porras ({participants.length})
+          <button className={`pill whitespace-nowrap ${activeTab === "porras" ? "active" : ""}`} onClick={() => setActiveTab("porras")}>
+            <Users size={14} /> Porras ({participants.length})
+          </button>
+          <button className={`pill whitespace-nowrap ${activeTab === "usuarios" ? "active" : ""}`} onClick={() => setActiveTab("usuarios")}>
+            <UserPlus size={14} /> Usuarios
           </button>
         </div>
 
-        {/* ════════════ TAB: RESULTADOS OFICIALES ════════════ */}
+        {/* ════ TAB: RESULTADOS ════ */}
         {activeTab === "resultados" && (
           <>
-            {/* Toolbar de resultados */}
             <section className="mb-5 animate-fade-in">
               <SectionTitle accent="#C99625" icon={Trophy}>Resultados oficiales</SectionTitle>
               <div className="card admin-results-toolbar">
@@ -391,7 +362,6 @@ export default function AdminPage() {
               </div>
             </section>
 
-            {/* Posiciones en grupos */}
             <section className="mb-5 animate-fade-in">
               <SectionTitle accent="#55BCBB" icon={Users}
                 right={<span className="badge badge-muted">{completedGroups}/12 completos</span>}>
@@ -460,8 +430,7 @@ export default function AdminPage() {
                                     <span className="truncate text-[12px] font-semibold text-text-warm">{row.team}</span>
                                   </div>
                                   <div className="admin-standings-metrics">
-                                    <span>PJ {row.played}</span>
-                                    <span>DG {row.gd}</span>
+                                    <span>PJ {row.played}</span><span>DG {row.gd}</span>
                                     <span className="admin-standings-points">{row.points} pts</span>
                                   </div>
                                 </div>
@@ -475,7 +444,6 @@ export default function AdminPage() {
               </div>
             </section>
 
-            {/* Eliminatorias — usa KNOCKOUT_ADMIN_COUNTS */}
             <section className="mb-5 animate-fade-in">
               <SectionTitle accent="#C99625" icon={Sparkles}>Eliminatorias</SectionTitle>
               <div className="grid gap-3">
@@ -512,7 +480,6 @@ export default function AdminPage() {
               </div>
             </section>
 
-            {/* Podio */}
             <section className="mb-5 animate-fade-in">
               <SectionTitle accent="#B58A1B" icon={Trophy}>Podio final</SectionTitle>
               <div className="grid gap-3 md:grid-cols-3">
@@ -536,7 +503,6 @@ export default function AdminPage() {
               </div>
             </section>
 
-            {/* Especiales */}
             <section className="animate-fade-in">
               <SectionTitle accent="#D6336F" icon={Sparkles}>Especiales</SectionTitle>
               <div className="grid gap-3 md:grid-cols-2">
@@ -573,13 +539,15 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ════════════ TAB: GESTIÓN DE PORRAS ════════════ */}
+        {/* ════ TAB: PORRAS ════ */}
         {activeTab === "porras" && (
           <PorrasManagementSection participants={participants} onEditTeam={setEditingTeam} />
         )}
+
+        {/* ════ TAB: USUARIOS ════ */}
+        {activeTab === "usuarios" && <UsersManagementSection />}
       </div>
 
-      {/* Save bar — solo visible en tab de resultados */}
       {activeTab === "resultados" && (
         <div className="admin-savebar">
           <div className="min-w-0 flex-1">
@@ -587,9 +555,7 @@ export default function AdminPage() {
               {saveState === "saved" ? "✓ Cambios guardados" : dirty ? "Cambios sin guardar" : "Sin cambios"}
             </p>
             <p className="admin-savebar-text">{formatAdminSavedAt(form.savedAt)}</p>
-            {saveError ? (
-              <p className="mt-1 text-[11px]" style={{ color: "rgb(var(--danger))" }}>{saveError}</p>
-            ) : null}
+            {saveError ? <p className="mt-1 text-[11px]" style={{ color: "rgb(var(--danger))" }}>{saveError}</p> : null}
           </div>
           <button type="button" className="btn btn-primary admin-savebar-button"
             onClick={() => void handleSave()}
@@ -608,31 +574,144 @@ export default function AdminPage() {
 }
 
 // ════════════════════════════════════════════════════════════
-// SECCIÓN: Gestión de porras de todos los usuarios
+// TAB: GESTIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════
 
-function PorrasManagementSection({
-  participants,
-  onEditTeam,
-}: {
-  participants: Team[];
-  onEditTeam: (team: Team) => void;
-}) {
+function UsersManagementSection() {
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [role, setRole] = useState<"user" | "admin">("user");
+  const [creating, setCreating] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleCreate = async () => {
+    if (!username.trim() || !password.trim()) {
+      setResult({ ok: false, message: "Usuario y contraseña son obligatorios." });
+      return;
+    }
+    setCreating(true);
+    setResult(null);
+    try {
+      const response = await fetch("/api/admin/users/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password: password.trim(), displayName: displayName.trim() || username.trim(), role }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setResult({ ok: false, message: payload?.error || "Error al crear el usuario." });
+      } else {
+        setResult({ ok: true, message: `Usuario @${payload.user.username} creado correctamente.` });
+        setUsername(""); setDisplayName(""); setPassword("");
+      }
+    } catch {
+      setResult({ ok: false, message: "Error de conexión." });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="animate-fade-in space-y-4">
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <UserPlus size={20} className="text-gold" />
+          <h2 className="font-display text-base font-bold text-text-warm">Añadir usuario</h2>
+        </div>
+        <p className="text-[12px] text-text-muted mb-4">
+          Crea un usuario con contraseña. Las credenciales podrán usarse inmediatamente en la pestaña Mi Club
+          para iniciar sesión y crear una porra. La contraseña se almacena de forma segura con scrypt.
+        </p>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="admin-field-block">
+            <span className="admin-field-label">Nombre de usuario <span className="required-asterisk">*</span></span>
+            <input className="input-field" placeholder="ej. juanito" value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ""))} />
+            <span className="text-[10px] text-text-muted">Solo letras, números, _, . y -</span>
+          </label>
+
+          <label className="admin-field-block">
+            <span className="admin-field-label">Nombre visible</span>
+            <input className="input-field" placeholder="ej. Juan García" value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)} />
+            <span className="text-[10px] text-text-muted">Nombre que aparece en el ranking. Si se deja vacío usa el usuario.</span>
+          </label>
+
+          <label className="admin-field-block">
+            <span className="admin-field-label">Contraseña <span className="required-asterisk">*</span></span>
+            <div className="relative">
+              <input className="input-field !pr-10" type={showPass ? "text" : "password"}
+                placeholder="Mínimo 4 caracteres" value={password}
+                onChange={(e) => setPassword(e.target.value)} />
+              <button type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted bg-transparent border-none cursor-pointer"
+                onClick={() => setShowPass((v) => !v)}>
+                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </label>
+
+          <label className="admin-field-block">
+            <span className="admin-field-label">Rol</span>
+            <select className="input-field admin-select" value={role} onChange={(e) => setRole(e.target.value as "user" | "admin")}>
+              <option value="user">Usuario (puede crear porras)</option>
+              <option value="admin">Admin (acceso al panel)</option>
+            </select>
+          </label>
+        </div>
+
+        {result && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5"
+            style={{
+              background: result.ok ? "rgb(var(--success-soft))" : "rgb(var(--danger-soft))",
+              border: `1px solid ${result.ok ? "rgba(var(--success),0.3)" : "rgba(var(--danger),0.3)"}`,
+            }}>
+            {result.ok ? <Check size={14} style={{ color: "rgb(var(--success))" }} /> : <AlertCircle size={14} style={{ color: "rgb(var(--danger))" }} />}
+            <p className="text-[12px] font-medium" style={{ color: result.ok ? "rgb(var(--success))" : "rgb(var(--danger))" }}>
+              {result.message}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end">
+          <button className="btn btn-primary" onClick={() => void handleCreate()} disabled={creating}>
+            <UserPlus size={16} />
+            {creating ? "Creando usuario..." : "Crear usuario"}
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <p className="text-[11px] text-text-muted">
+          <strong className="text-text-warm">Nota de seguridad:</strong> Las contraseñas se guardan cifradas con scrypt (N=16384).
+          Nunca se almacenan en claro. Si necesitas cambiar la contraseña de un usuario, crea uno nuevo con el mismo nombre de usuario
+          y el sistema actualizará el hash automáticamente (ON CONFLICT DO UPDATE en Neon).
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB: GESTIÓN DE PORRAS
+// ════════════════════════════════════════════════════════════
+
+function PorrasManagementSection({ participants, onEditTeam }: { participants: Team[]; onEditTeam: (team: Team) => void }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Agrupar por usuario
   const byUser = useMemo(() => {
     const map = new Map<string, Team[]>();
-    participants
-      .filter((p) => !deletedIds.has(p.id))
-      .forEach((p) => {
-        const list = map.get(p.username) || [];
-        list.push(p);
-        map.set(p.username, list);
-      });
+    participants.filter((p) => !deletedIds.has(p.id)).forEach((p) => {
+      const list = map.get(p.username) || [];
+      list.push(p);
+      map.set(p.username, list);
+    });
     return map;
   }, [participants, deletedIds]);
 
@@ -656,11 +735,7 @@ function PorrasManagementSection({
   };
 
   if (byUser.size === 0) {
-    return (
-      <div className="card text-center py-10">
-        <p className="text-text-muted text-sm">No hay porras guardadas en la BBDD.</p>
-      </div>
-    );
+    return <div className="card text-center py-10"><p className="text-text-muted text-sm">No hay porras guardadas.</p></div>;
   }
 
   return (
@@ -670,80 +745,38 @@ function PorrasManagementSection({
           <p className="text-sm text-danger">{deleteError}</p>
         </div>
       )}
-
-      <p className="text-[11px] text-text-muted">
-        {participants.filter((p) => !deletedIds.has(p.id)).length} porras de {byUser.size} usuarios.
-        Los cambios en porras se guardan directamente en la BBDD.
-      </p>
-
+      <p className="text-[11px] text-text-muted">{participants.filter((p) => !deletedIds.has(p.id)).length} porras de {byUser.size} usuarios.</p>
       {Array.from(byUser.entries()).map(([username, teams]) => (
         <div key={username} className="card">
           <div className="flex items-center gap-2 mb-3">
             <span className="font-display text-sm font-bold text-text-warm">@{username}</span>
             <span className="badge badge-muted text-[9px]">{teams.length} porra{teams.length !== 1 ? "s" : ""}</span>
           </div>
-
           <div className="space-y-2">
             {teams.map((team) => {
               const isExpanded = expandedId === team.id;
               return (
                 <div key={team.id} className="rounded-xl border" style={{ borderColor: "rgb(var(--border-subtle))" }}>
-                  {/* Header de la porra */}
                   <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                    <button
-                      className="flex items-center gap-2 text-left flex-1 min-w-0"
-                      onClick={() => setExpandedId(isExpanded ? null : team.id)}
-                    >
+                    <button className="flex items-center gap-2 text-left flex-1 min-w-0"
+                      onClick={() => setExpandedId(isExpanded ? null : team.id)}>
                       {isExpanded ? <ChevronUp size={14} className="text-text-muted flex-shrink-0" /> : <ChevronDown size={14} className="text-text-muted flex-shrink-0" />}
                       <span className="text-sm font-semibold text-text-warm truncate">{team.name}</span>
                       <span className="badge badge-muted text-[9px]">{team.totalPoints} pts</span>
                     </button>
                     <div className="flex gap-1.5 flex-shrink-0">
-                      <button
-                        className="btn btn-ghost !px-2.5 !py-1.5 text-[11px]"
-                        onClick={() => onEditTeam(team)}
-                      >
+                      <button className="btn btn-ghost !px-2.5 !py-1.5 text-[11px]" onClick={() => onEditTeam(team)}>
                         <Edit2 size={12} /> Editar
                       </button>
-                      <DeleteConfirmButton
-                        team={team}
-                        deleting={deletingId === team.id}
-                        onConfirm={() => void handleDelete(team)}
-                      />
+                      <DeleteConfirmButton team={team} deleting={deletingId === team.id} onConfirm={() => void handleDelete(team)} />
                     </div>
                   </div>
-
-                  {/* Detalle expandido */}
                   {isExpanded && (
                     <div className="border-t px-3 py-3 space-y-2 animate-fade-in" style={{ borderColor: "rgb(var(--border-subtle))" }}>
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div>
-                          <p className="text-[9px] text-text-muted uppercase tracking-wide">Grupos</p>
-                          <p className="text-sm font-bold text-text-warm">{team.groupPoints}</p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] text-text-muted uppercase tracking-wide">Elim.</p>
-                          <p className="text-sm font-bold text-text-warm">{team.finalPhasePoints}</p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] text-text-muted uppercase tracking-wide">Especiales</p>
-                          <p className="text-sm font-bold text-text-warm">{team.specialPoints}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 pt-1">
-                        <span className="text-[11px] text-text-muted">Podio:</span>
-                        <div className="flex gap-2 flex-wrap">
-                          {team.championPick && (
-                            <span className="inline-flex items-center gap-1 text-[11px]">
-                              🥇 <Flag country={team.championPick} size="sm" /> {team.championPick}
-                            </span>
-                          )}
-                          {team.runnerUpPick && (
-                            <span className="inline-flex items-center gap-1 text-[11px]">
-                              🥈 <Flag country={team.runnerUpPick} size="sm" /> {team.runnerUpPick}
-                            </span>
-                          )}
-                        </div>
+                        <div><p className="text-[9px] text-text-muted uppercase tracking-wide">Grupos</p><p className="text-sm font-bold text-text-warm">{team.groupPoints}</p></div>
+                        <div><p className="text-[9px] text-text-muted uppercase tracking-wide">Elim.</p><p className="text-sm font-bold text-text-warm">{team.finalPhasePoints}</p></div>
+                        <div><p className="text-[9px] text-text-muted uppercase tracking-wide">Especiales</p><p className="text-sm font-bold text-text-warm">{team.specialPoints}</p></div>
                       </div>
                       {team.createdAt && (
                         <p className="text-[10px] text-text-muted">
@@ -762,54 +795,28 @@ function PorrasManagementSection({
   );
 }
 
-function DeleteConfirmButton({
-  team,
-  deleting,
-  onConfirm,
-}: {
-  team: Team;
-  deleting: boolean;
-  onConfirm: () => void;
-}) {
+function DeleteConfirmButton({ team, deleting, onConfirm }: { team: Team; deleting: boolean; onConfirm: () => void }) {
   const [confirming, setConfirming] = useState(false);
-
   if (confirming) {
     return (
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-danger font-medium">¿Eliminar?</span>
         <button className="btn btn-ghost !px-2 !py-1 text-[10px] !text-danger border-danger/20"
-          onClick={() => { setConfirming(false); onConfirm(); }} disabled={deleting}>
-          Confirmar
-        </button>
-        <button className="btn btn-ghost !px-2 !py-1 text-[10px]"
-          onClick={() => setConfirming(false)}>
-          Cancelar
-        </button>
+          onClick={() => { setConfirming(false); onConfirm(); }} disabled={deleting}>Confirmar</button>
+        <button className="btn btn-ghost !px-2 !py-1 text-[10px]" onClick={() => setConfirming(false)}>Cancelar</button>
       </div>
     );
   }
-
   return (
-    <button
-      className="btn btn-ghost !px-2.5 !py-1.5 text-[11px]"
-      style={{ color: "rgb(var(--danger))" }}
-      onClick={() => setConfirming(true)}
-      disabled={deleting}
-    >
+    <button className="btn btn-ghost !px-2.5 !py-1.5 text-[11px]" style={{ color: "rgb(var(--danger))" }}
+      onClick={() => setConfirming(true)} disabled={deleting}>
       <Trash2 size={12} />
     </button>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// AdminMatchEditorCard
-// ════════════════════════════════════════════════════════════
-
-function AdminMatchEditorCard({
-  match, result, onScoreChange, onClear,
-}: {
-  match: WorldCupMatch;
-  result: AdminMatchResult | undefined;
+function AdminMatchEditorCard({ match, result, onScoreChange, onClear }: {
+  match: WorldCupMatch; result: AdminMatchResult | undefined;
   onScoreChange: (matchId: number, side: "home" | "away", value: string) => void;
   onClear: (matchId: number) => void;
 }) {
@@ -833,7 +840,6 @@ function AdminMatchEditorCard({
           <MapPin size={9} /> {match.hostCity}
         </span>
       </div>
-
       <div className="admin-match-row">
         <div className="admin-match-team admin-match-team--home">
           <span className="admin-match-team-name">{match.homeTeam}</span>
@@ -842,20 +848,17 @@ function AdminMatchEditorCard({
         <div className="admin-score-editor">
           <input className="admin-score-input" inputMode="numeric" type="number" min={0} step={1} placeholder="-"
             value={typeof result?.home === "number" ? result.home : ""}
-            onChange={(e) => onScoreChange(match.id, "home", e.target.value)}
-            aria-label={`Goles ${match.homeTeam}`} />
+            onChange={(e) => onScoreChange(match.id, "home", e.target.value)} aria-label={`Goles ${match.homeTeam}`} />
           <span className="admin-score-separator">-</span>
           <input className="admin-score-input" inputMode="numeric" type="number" min={0} step={1} placeholder="-"
             value={typeof result?.away === "number" ? result.away : ""}
-            onChange={(e) => onScoreChange(match.id, "away", e.target.value)}
-            aria-label={`Goles ${match.awayTeam}`} />
+            onChange={(e) => onScoreChange(match.id, "away", e.target.value)} aria-label={`Goles ${match.awayTeam}`} />
         </div>
         <div className="admin-match-team admin-match-team--away">
           <Flag country={match.awayTeam} size="sm" />
           <span className="admin-match-team-name">{match.awayTeam}</span>
         </div>
       </div>
-
       <div className="mt-3 admin-match-footer">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="badge badge-muted text-[10px]">{match.roundLabel}</span>
