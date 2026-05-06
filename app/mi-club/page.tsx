@@ -712,7 +712,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
     <div className="space-y-4 animate-fade-in">
       {rounds.map((round) => {
         const adminTeams = new Set(
-          (adminResults.knockoutRounds?.[round.key] || []).filter(Boolean)
+          (adminResults.knockoutRounds?.[round.key as import("@/lib/admin-results").KnockoutRoundKey] || []).filter(Boolean)
         );
         const adminHasData = adminTeams.size > 0;
 
@@ -758,7 +758,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                   }
 
                   // Buscar puntos del pick original
-                  const pickData = (team.knockoutPicks?.[round.key] || []).find(
+                  const pickData = (team.knockoutPicks?.[round.key as import("@/lib/admin-results").KnockoutRoundKey] || []).find(
                     (p) => p.country === country
                   );
 
