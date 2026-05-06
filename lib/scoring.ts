@@ -12,7 +12,6 @@ function buildMatchKey(homeTeam: string, awayTeam: string) {
   return `${normalizeCountryKey(homeTeam)}|${normalizeCountryKey(awayTeam)}`;
 }
 
-// Indexar el schedule oficial en AMBOS sentidos (home|away y away|home).
 WORLD_CUP_MATCHES.filter((match) => match.stage === "group").forEach((match) => {
   const matchIdStr = String(match.id);
   WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.set(buildMatchKey(match.homeTeam, match.awayTeam), matchIdStr);
@@ -21,20 +20,14 @@ WORLD_CUP_MATCHES.filter((match) => match.stage === "group").forEach((match) => 
 
 FIXTURES.forEach((fixture) => {
   const matchId = WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.get(buildMatchKey(fixture.homeTeam, fixture.awayTeam));
-  if (matchId) {
-    ADMIN_MATCH_ID_BY_FIXTURE_ID.set(fixture.id, matchId);
-  }
+  if (matchId) ADMIN_MATCH_ID_BY_FIXTURE_ID.set(fixture.id, matchId);
 });
 
 if (process.env.NODE_ENV !== "production" && typeof window === "undefined") {
-  const groupFixtures = FIXTURES.filter((f) => f.stage === "groups");
-  const unmapped = groupFixtures.filter((f) => !ADMIN_MATCH_ID_BY_FIXTURE_ID.has(f.id));
+  const unmapped = FIXTURES.filter((f) => f.stage === "groups" && !ADMIN_MATCH_ID_BY_FIXTURE_ID.has(f.id));
   if (unmapped.length > 0) {
     // eslint-disable-next-line no-console
-    console.warn(
-      `[scoring] ${unmapped.length} fixtures de grupo sin matchId del schedule oficial:`,
-      unmapped.map((f) => `${f.id} (${f.homeTeam} vs ${f.awayTeam})`)
-    );
+    console.warn(`[scoring] ${unmapped.length} fixtures sin matchId del schedule oficial:`, unmapped.map((f) => `${f.id} (${f.homeTeam} vs ${f.awayTeam})`));
   }
 }
 
@@ -43,7 +36,9 @@ function cloneMatchPicks(matchPicks: Record<string, MatchPick>) {
 }
 
 function cloneKnockoutPicks(knockoutPicks: Record<string, KnockoutPick[]>) {
-  return Object.fromEntries(Object.entries(knockoutPicks || {}).map(([k, picks]) => [k, (picks || []).map((p) => ({ ...p }))]));
+  return Object.fromEntries(
+    Object.entries(knockoutPicks || {}).map(([k, picks]) => [k, (picks || []).map((p) => ({ ...p }))])
+  );
 }
 
 function cloneTeam(team: Team): Team {
@@ -71,10 +66,8 @@ function isGroupConfigured(group: string, adminResults: AdminResults) {
   return unique.size === 4 && unique.has(1) && unique.has(2) && unique.has(3) && unique.has(4);
 }
 
-// ── FIX: usa KNOCKOUT_ADMIN_COUNTS (32/16/8/4) en lugar de round.count (16/8/4/2).
-// El admin ahora guarda todos los equipos que participan en cada ronda, no solo
-// los ganadores. isRoundConfigured estaba comparando selected.length (32) contra
-// required (16) → siempre false → ningún acierto de knockout puntuaba.
+// Usa KNOCKOUT_ADMIN_COUNTS: la ronda está configurada cuando el admin ha llenado
+// los N slots que le corresponden (32 para dieciseisavos, 16 para octavos, etc.)
 function isRoundConfigured(roundKey: KnockoutRoundKey, adminResults: AdminResults) {
   const required = KNOCKOUT_ADMIN_COUNTS[roundKey] || 0;
   const selected = adminResults.knockoutRounds[roundKey].filter(Boolean);
@@ -121,7 +114,6 @@ function scoreGroupMatchPicks(team: Team, adminResults: AdminResults) {
       matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
       return;
     }
-    // Si el marcador del pick es null (guardado incompleto), marcar como pendiente
     if (pick.home === null || pick.away === null) {
       matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
       return;
@@ -147,27 +139,200 @@ function scoreGroupPositions(team: Team, adminResults: AdminResults) {
   return points;
 }
 
+// ════════════════════════════════════════════════════════════
+// RECONSTRUCCIÓN DE LOS 32 PARTICIPANTES EN DIECISEISAVOS
+//
+// El usuario no almacena explícitamente los 32 participantes de
+// dieciseisavos: se derivan de los picks de grupo.
+//   - 1.º y 2.º de cada uno de los 12 grupos = 24 equipos
+//   - Los 8 mejores terceros elegidos por el usuario = 8 equipos
+//   Total = 32 equipos
+// ════════════════════════════════════════════════════════════
+function reconstructRound32Participants(team: Team): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  // Top 2 de cada grupo
+  for (const group of Object.keys(GROUPS)) {
+    const picks = team.groupOrderPicks?.[group] || [];
+    [0, 1].forEach((i) => {
+      if (picks[i] && !seen.has(picks[i])) {
+        result.push(picks[i]);
+        seen.add(picks[i]);
+      }
+    });
+  }
+
+  // Mejores terceros elegidos
+  for (const group of (team.bestThirdGroups || [])) {
+    const picks = team.groupOrderPicks?.[group] || [];
+    if (picks[2] && !seen.has(picks[2])) {
+      result.push(picks[2]);
+      seen.add(picks[2]);
+    }
+  }
+
+  return result;
+}
+
+// ════════════════════════════════════════════════════════════
+// SCORING DE ELIMINATORIAS — MODELO CORRECTO
+//
+// Los puntos se otorgan por acertar que un equipo LLEGA a una ronda,
+// no por que la gane. El mapeo de picks→admin es:
+//
+//  Ronda          | Fuente de picks del usuario              | Admin referencia
+//  dieciseisavos  | reconstructRound32Participants() — 32    | admin.dieciseisavos (32)
+//  octavos        | knockoutPicks.dieciseisavos — 16 picks   | admin.octavos (16)
+//  cuartos        | knockoutPicks.octavos — 8 picks          | admin.cuartos (8)
+//  semis          | knockoutPicks.cuartos — 4 picks          | admin.semis (4)
+//  final          | knockoutPicks.semis — 2 picks            | admin.final (2)
+//
+// Ejemplo:
+//  - Tienes España en tu reconstructed 32 y España está en admin.dieciseisavos → +6
+//  - Tienes España en knockoutPicks.dieciseisavos (elegiste que avanzara) y
+//    España está en admin.octavos → +10 (independiente del +6 anterior)
+//  - etc. Cada ronda puntúa de forma independiente.
+// ════════════════════════════════════════════════════════════
 function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
   let points = 0;
   const knockoutPicks = cloneKnockoutPicks(team.knockoutPicks);
-  KNOCKOUT_ROUND_DEFS.forEach((round) => {
-    const configured = isRoundConfigured(round.key, adminResults);
-    // El set de equipos oficiales para esta ronda (puede contener 32/16/8/4 equipos)
-    const actualTeams = configured
-      ? new Set(adminResults.knockoutRounds[round.key].filter(Boolean))
-      : new Set<string>();
+
+  // --- Obtener pts por ronda ---
+  const ptsByKey = KNOCKOUT_ROUND_DEFS.reduce<Record<string, number>>((acc, r) => {
+    acc[r.key] = r.pts;
+    return acc;
+  }, {});
+
+  // Plan de scoring: [picks_fuente, admin_referencia, pts]
+  type ScoringEntry = {
+    getPicks: () => string[];
+    adminKey: KnockoutRoundKey;
+    pts: number;
+  };
+
+  const scoringPlan: ScoringEntry[] = [
+    // Dieciseisavos: reconstruimos los 32 participantes desde los picks de grupo
+    {
+      getPicks: () => reconstructRound32Participants(team),
+      adminKey: "dieciseisavos",
+      pts: ptsByKey["dieciseisavos"] ?? 6,
+    },
+    // Octavos: los 16 que el usuario eligió para avanzar FROM dieciseisavos
+    {
+      getPicks: () => (team.knockoutPicks?.["dieciseisavos"] || []).map((p) => p.country).filter(Boolean),
+      adminKey: "octavos",
+      pts: ptsByKey["octavos"] ?? 10,
+    },
+    // Cuartos: los 8 que el usuario eligió para avanzar FROM octavos
+    {
+      getPicks: () => (team.knockoutPicks?.["octavos"] || []).map((p) => p.country).filter(Boolean),
+      adminKey: "cuartos",
+      pts: ptsByKey["cuartos"] ?? 15,
+    },
+    // Semis: los 4 que el usuario eligió para avanzar FROM cuartos
+    {
+      getPicks: () => (team.knockoutPicks?.["cuartos"] || []).map((p) => p.country).filter(Boolean),
+      adminKey: "semis",
+      pts: ptsByKey["semis"] ?? 20,
+    },
+    // Final: los 2 que el usuario eligió para avanzar FROM semis
+    {
+      getPicks: () => (team.knockoutPicks?.["semis"] || []).map((p) => p.country).filter(Boolean),
+      adminKey: "final",
+      pts: ptsByKey["final"] ?? 25,
+    },
+  ];
+
+  scoringPlan.forEach(({ getPicks, adminKey, pts }) => {
+    const configured = isRoundConfigured(adminKey, adminResults);
+    if (!configured) return;
+
+    const actualTeams = new Set(adminResults.knockoutRounds[adminKey].filter(Boolean));
     const seen = new Set<string>();
-    knockoutPicks[round.key] = (knockoutPicks[round.key] || []).map((pick) => {
-      if (!configured) return { ...pick, points: null, status: "pending" };
-      const duplicate = seen.has(pick.country);
-      seen.add(pick.country);
-      // El usuario acierta si el equipo que eligió está en el set de participantes de la ronda
-      const correct = !duplicate && actualTeams.has(pick.country);
-      const pickPoints = correct ? round.pts : 0;
-      points += pickPoints;
-      return { ...pick, points: pickPoints, status: correct ? "correct" : "wrong" };
+
+    getPicks().forEach((country) => {
+      if (!country || seen.has(country)) return;
+      seen.add(country);
+      if (actualTeams.has(country)) {
+        points += pts;
+      }
     });
   });
+
+  // ── Actualizar status de knockoutPicks para display ──────────────────
+  // Para la pestaña de Eliminatorias en Mi Club, marcamos el status de cada
+  // pick según corresponde a su ronda de puntuación.
+  //
+  // NOTA: El display en EliminatoriasTab (mi-club) calcula la corrección
+  // directamente desde adminResults, por lo que estos campos son auxiliares.
+  // Los actualizamos de todas formas para consistencia.
+
+  // knockoutPicks.dieciseisavos: comparar contra admin.dieciseisavos (participaron en esa ronda)
+  if (isRoundConfigured("dieciseisavos", adminResults)) {
+    const adminD16 = new Set(adminResults.knockoutRounds.dieciseisavos.filter(Boolean));
+    const seen = new Set<string>();
+    knockoutPicks.dieciseisavos = (knockoutPicks.dieciseisavos || []).map((pick) => {
+      const dup = seen.has(pick.country); seen.add(pick.country);
+      const correct = !dup && adminD16.has(pick.country);
+      return { ...pick, points: correct ? (ptsByKey["dieciseisavos"] ?? 6) : 0, status: correct ? "correct" : "wrong" };
+    });
+  } else {
+    knockoutPicks.dieciseisavos = (knockoutPicks.dieciseisavos || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
+  }
+
+  // knockoutPicks.octavos: comparar contra admin.octavos
+  if (isRoundConfigured("octavos", adminResults)) {
+    const adminO = new Set(adminResults.knockoutRounds.octavos.filter(Boolean));
+    const seen = new Set<string>();
+    knockoutPicks.octavos = (knockoutPicks.octavos || []).map((pick) => {
+      const dup = seen.has(pick.country); seen.add(pick.country);
+      const correct = !dup && adminO.has(pick.country);
+      return { ...pick, points: correct ? (ptsByKey["octavos"] ?? 10) : 0, status: correct ? "correct" : "wrong" };
+    });
+  } else {
+    knockoutPicks.octavos = (knockoutPicks.octavos || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
+  }
+
+  // knockoutPicks.cuartos: comparar contra admin.cuartos
+  if (isRoundConfigured("cuartos", adminResults)) {
+    const adminC = new Set(adminResults.knockoutRounds.cuartos.filter(Boolean));
+    const seen = new Set<string>();
+    knockoutPicks.cuartos = (knockoutPicks.cuartos || []).map((pick) => {
+      const dup = seen.has(pick.country); seen.add(pick.country);
+      const correct = !dup && adminC.has(pick.country);
+      return { ...pick, points: correct ? (ptsByKey["cuartos"] ?? 15) : 0, status: correct ? "correct" : "wrong" };
+    });
+  } else {
+    knockoutPicks.cuartos = (knockoutPicks.cuartos || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
+  }
+
+  // knockoutPicks.semis: comparar contra admin.semis
+  if (isRoundConfigured("semis", adminResults)) {
+    const adminS = new Set(adminResults.knockoutRounds.semis.filter(Boolean));
+    const seen = new Set<string>();
+    knockoutPicks.semis = (knockoutPicks.semis || []).map((pick) => {
+      const dup = seen.has(pick.country); seen.add(pick.country);
+      const correct = !dup && adminS.has(pick.country);
+      return { ...pick, points: correct ? (ptsByKey["semis"] ?? 20) : 0, status: correct ? "correct" : "wrong" };
+    });
+  } else {
+    knockoutPicks.semis = (knockoutPicks.semis || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
+  }
+
+  // knockoutPicks.final: comparar contra admin.final
+  if (isRoundConfigured("final", adminResults)) {
+    const adminF = new Set(adminResults.knockoutRounds.final.filter(Boolean));
+    const seen = new Set<string>();
+    knockoutPicks.final = (knockoutPicks.final || []).map((pick) => {
+      const dup = seen.has(pick.country); seen.add(pick.country);
+      const correct = !dup && adminF.has(pick.country);
+      return { ...pick, points: correct ? (ptsByKey["final"] ?? 25) : 0, status: correct ? "correct" : "wrong" };
+    });
+  } else {
+    knockoutPicks.final = (knockoutPicks.final || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
+  }
+
   return { points, knockoutPicks };
 }
 

@@ -670,41 +670,48 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
       octavos: toSet("octavos"),
       cuartos: toSet("cuartos"),
       semis: toSet("semis"),
-      final: new Set([team.championPick].filter(Boolean) as string[]),
     };
   }, [team]);
 
-  // Cada ronda: participantes = picks de la ronda anterior
+  // Cada ronda: adminKey = ronda del admin para comprobar corrección
+  // participants = equipos que el usuario TENÍA en esa ronda (no solo los que avanzaron)
+  // advancePicks = los que eligió para avanzar desde esa ronda
+  // pts = puntos por equipo correcto en esa ronda
   const rounds = [
     {
-      key: "dieciseisavos",
+      adminKey: "dieciseisavos" as import("@/lib/admin-results").KnockoutRoundKey,
       name: "Dieciseisavos de Final",
-      participants: round32Participants,         // 32 equipos
-      picks: picksMap.dieciseisavos,             // 16 que avanzan
+      pts: 6,
+      participants: round32Participants,                    // 32 reconstruidos
+      advancePicks: picksMap.dieciseisavos,                 // 16 elegidos para avanzar
     },
     {
-      key: "octavos",
+      adminKey: "octavos" as import("@/lib/admin-results").KnockoutRoundKey,
       name: "Octavos de Final",
-      participants: Array.from(picksMap.dieciseisavos), // 16 equipos
-      picks: picksMap.octavos,                          // 8 que avanzan
+      pts: 10,
+      participants: Array.from(picksMap.dieciseisavos),     // 16 picks de avance de d16
+      advancePicks: picksMap.octavos,
     },
     {
-      key: "cuartos",
+      adminKey: "cuartos" as import("@/lib/admin-results").KnockoutRoundKey,
       name: "Cuartos de Final",
-      participants: Array.from(picksMap.octavos), // 8 equipos
-      picks: picksMap.cuartos,                    // 4 que avanzan
+      pts: 15,
+      participants: Array.from(picksMap.octavos),           // 8
+      advancePicks: picksMap.cuartos,
     },
     {
-      key: "semis",
+      adminKey: "semis" as import("@/lib/admin-results").KnockoutRoundKey,
       name: "Semifinales",
-      participants: Array.from(picksMap.cuartos), // 4 equipos
-      picks: picksMap.semis,                      // 2 que avanzan
+      pts: 20,
+      participants: Array.from(picksMap.cuartos),           // 4
+      advancePicks: picksMap.semis,
     },
     {
-      key: "final",
+      adminKey: "final" as import("@/lib/admin-results").KnockoutRoundKey,
       name: "Final",
-      participants: Array.from(picksMap.semis),   // 2 equipos
-      picks: picksMap.final,                      // 1 campeón
+      pts: 25,
+      participants: Array.from(picksMap.semis),             // 2
+      advancePicks: new Set([team.championPick].filter(Boolean) as string[]),
     },
   ];
 
@@ -712,14 +719,14 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
     <div className="space-y-4 animate-fade-in">
       {rounds.map((round) => {
         const adminTeams = new Set(
-          (adminResults.knockoutRounds?.[round.key as import("@/lib/admin-results").KnockoutRoundKey] || []).filter(Boolean)
+          (adminResults.knockoutRounds?.[round.adminKey] || []).filter(Boolean)
         );
         const adminHasData = adminTeams.size > 0;
 
         const participants = round.participants;
 
         return (
-          <div key={round.key} className="card">
+          <div key={round.adminKey} className="card">
             <div className="flex items-center justify-between mb-2.5">
               <p className="text-[11px] font-bold text-text-muted uppercase tracking-wide">
                 {round.name}
@@ -736,7 +743,9 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {participants.map((country, idx) => {
-                  const advancePick = round.picks.has(country);
+                  const advancePick = round.advancePicks.has(country);
+                  // Correcto si el admin confirma el equipo en esa ronda
+                  // — independiente de si el usuario lo eligió para avanzar
                   const correct = adminHasData && showScores && adminTeams.has(country);
                   const wrong = adminHasData && showScores && advancePick && !adminTeams.has(country);
 
@@ -748,7 +757,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                     : "1px solid rgb(var(--border-subtle))";
 
                   if (showScores && adminHasData) {
-                    if (correct && advancePick) {
+                    if (correct) {
                       bg = "rgb(var(--success-soft))";
                       border = "1px solid rgba(var(--success), 0.3)";
                     } else if (wrong) {
@@ -757,30 +766,24 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                     }
                   }
 
-                  // Buscar puntos del pick original
-                  const pickData = (team.knockoutPicks?.[round.key as import("@/lib/admin-results").KnockoutRoundKey] || []).find(
-                    (p) => p.country === country
-                  );
-
                   return (
                     <span
-                      key={`${round.key}-${country}-${idx}`}
+                      key={`${round.adminKey}-${country}-${idx}`}
                       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-all"
                       style={{ background: bg, border, color: "rgb(var(--text-warm))" }}
-                      title={advancePick ? "Elegido para avanzar" : "Eliminado en esta ronda"}
                     >
                       <Flag country={country} size="sm" />
                       <span>{country}</span>
                       {advancePick && (
-                        <span
-                          className="text-[9px] font-black"
-                          style={{ color: "#F0417A" }}
-                        >
-                          →
-                        </span>
+                        <span className="text-[9px] font-black" style={{ color: "#F0417A" }}>→</span>
                       )}
-                      {showScores && pickData?.points != null && pickData.points > 0 && (
-                        <span className="text-success font-bold">+{pickData.points}</span>
+                      {/* Puntos calculados desde la definición de la ronda, NO desde pickData.points.
+                          Así se muestran para TODOS los equipos correctos, incluyendo los que
+                          no tienen → (no elegidos para avanzar pero sí acertados en esa ronda). */}
+                      {showScores && correct && (
+                        <span className="font-bold" style={{ color: "rgb(var(--success))" }}>
+                          +{round.pts}
+                        </span>
                       )}
                     </span>
                   );
@@ -788,7 +791,6 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
               </div>
             )}
 
-            {/* Leyenda compacta */}
             <div className="mt-2 flex items-center gap-3 text-[9px] text-text-faint">
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-accent-versus/30 border border-accent-versus/40" />
@@ -796,8 +798,8 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full"
-                  style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }} />
-                Eliminado
+                  style={{ background: "rgb(var(--success-soft))", border: "1px solid rgba(var(--success),0.3)" }} />
+                Acertado
               </span>
             </div>
           </div>
