@@ -34,7 +34,8 @@ async function isEnvAdminCredentials(username: string, password: string) {
   }
 
   const plainPassword = process.env.ADMIN_PASSWORD;
-  return Boolean(plainPassword) && timingSafeStringEqual(password, plainPassword);
+  if (!plainPassword) return false;
+  return timingSafeStringEqual(password, plainPassword);
 }
 
 export async function isAdminCredentials(username: string, password: string) {
