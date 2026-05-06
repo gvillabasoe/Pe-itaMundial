@@ -1,0 +1,43 @@
+// INSTRUCCIÓN: En lib/data.ts, busca el bloque KNOCKOUT_ROUND_DEFS y reemplaza por este:
+
+export const KNOCKOUT_ROUND_DEFS = [
+  {
+    name: "Dieciseisavos de Final",
+    key: "dieciseisavos",
+    pts: 6,
+    count: 16,       // picks del usuario (cuántos equipos elige el usuario para esta ronda)
+    adminCount: 32,  // slots del admin (todos los equipos que participan en la ronda)
+  },
+  {
+    name: "Octavos de Final",
+    key: "octavos",
+    pts: 10,
+    count: 8,
+    adminCount: 16,
+  },
+  {
+    name: "Cuartos de Final",
+    key: "cuartos",
+    pts: 15,
+    count: 4,
+    adminCount: 8,
+  },
+  {
+    name: "Semifinales",
+    key: "semis",
+    pts: 20,
+    count: 2,
+    adminCount: 4,
+  },
+  {
+    name: "Final",
+    key: "final",
+    pts: 25,
+    count: 2,
+    adminCount: 2,
+  },
+] as const;
+
+// IMPORTANTE: No toques nada más de lib/data.ts.
+// El campo `count` lo sigue usando el builder y el sistema de puntuación.
+// El campo `adminCount` lo usan lib/admin-results.ts y app/admin/page.tsx.
