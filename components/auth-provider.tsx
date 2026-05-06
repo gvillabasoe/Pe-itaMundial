@@ -162,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    void fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setUser(null);
     setFavorites([]);
     safeRemove(STORAGE_KEY_USER);
