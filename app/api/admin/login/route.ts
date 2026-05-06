@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdminCredentials } from "@/lib/admin-auth";
-import { ADMIN_COOKIE_NAME, ADMIN_SESSION_MAX_AGE } from "@/lib/admin-session";
+import { ADMIN_COOKIE_NAME, ADMIN_SESSION_MAX_AGE, createAdminSessionCookieValue } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,10 +17,15 @@ type ParsedLoginRequest = {
   mode: "json" | "form";
 };
 
-function applySessionCookie(response: NextResponse) {
+async function applySessionCookie(response: NextResponse) {
+  const value = await createAdminSessionCookieValue();
+  if (!value) {
+    throw new Error("Falta ADMIN_SESSION_SECRET, AUTH_SECRET, NEXTAUTH_SECRET o DATABASE_URL.");
+  }
+
   response.cookies.set({
     name: ADMIN_COOKIE_NAME,
-    value: "1",
+    value,
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -78,7 +83,7 @@ export async function POST(request: Request) {
   try {
     const { username, password, redirectTo, mode } = await parseLoginRequest(request);
 
-    if (!isAdminCredentials(username, password)) {
+    if (!(await isAdminCredentials(username, password))) {
       if (mode === "json") {
         return NextResponse.json(
           { error: "Credenciales incorrectas" },
@@ -91,7 +96,7 @@ export async function POST(request: Request) {
 
     if (mode === "json") {
       const response = NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
-      return applySessionCookie(response);
+      return await applySessionCookie(response);
     }
 
     const response = NextResponse.redirect(new URL(redirectTo, request.url), {
@@ -99,7 +104,7 @@ export async function POST(request: Request) {
       headers: NO_STORE_HEADERS,
     });
 
-    return applySessionCookie(response);
+    return await applySessionCookie(response);
   } catch {
     const contentType = request.headers.get("content-type") || "";
 

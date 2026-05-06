@@ -1,36 +1,41 @@
 import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, SCORING, type Fixture, type KnockoutPick, type MatchPick, type Team } from "@/lib/data";
-import type { AdminResults, KnockoutRoundKey } from "@/lib/admin-results";
+import { KNOCKOUT_ADMIN_COUNTS, hasConfiguredAdminResults, type AdminResults, type KnockoutRoundKey } from "@/lib/admin-results";
 import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
 import { normalizeCountryKey } from "@/lib/flags";
 
 const FIXTURE_BY_ID = new Map(FIXTURES.map((fixture) => [fixture.id, fixture]));
-const WORLD_CUP_GROUP_MATCH_ID_BY_PAIR = new Map<string, string>();
-const ADMIN_MATCH_ID_BY_FIXTURE_ID = new Map<string, string>();
+type AdminMatchMapping = { matchId: string; swapped: boolean };
+const WORLD_CUP_GROUP_MATCH_BY_PAIR = new Map<string, AdminMatchMapping>();
+const ADMIN_MATCH_BY_FIXTURE_ID = new Map<string, AdminMatchMapping>();
+
+const ADMIN_ROUND_BY_PICK_ROUND: Record<KnockoutRoundKey, KnockoutRoundKey> = {
+  dieciseisavos: "octavos",
+  octavos: "cuartos",
+  cuartos: "semis",
+  semis: "final",
+  final: "final",
+};
 
 function buildMatchKey(homeTeam: string, awayTeam: string) {
   return `${normalizeCountryKey(homeTeam)}|${normalizeCountryKey(awayTeam)}`;
 }
 
-// Indexar el schedule oficial en AMBOS sentidos (home|away y away|home).
-// Sin esto, los partidos del mock FIXTURES con orden invertido respecto al
-// schedule oficial no se mapeaban a su matchId, dejando los puntos por
-// resultado exacto en estado "pending" aunque el admin hubiera guardado.
 WORLD_CUP_MATCHES.filter((match) => match.stage === "group").forEach((match) => {
-  const matchIdStr = String(match.id);
-  WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.set(buildMatchKey(match.homeTeam, match.awayTeam), matchIdStr);
-  WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.set(buildMatchKey(match.awayTeam, match.homeTeam), matchIdStr);
+  const matchId = String(match.id);
+  WORLD_CUP_GROUP_MATCH_BY_PAIR.set(buildMatchKey(match.homeTeam, match.awayTeam), { matchId, swapped: false });
+  WORLD_CUP_GROUP_MATCH_BY_PAIR.set(buildMatchKey(match.awayTeam, match.homeTeam), { matchId, swapped: true });
 });
 
 FIXTURES.forEach((fixture) => {
-  const matchId = WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.get(buildMatchKey(fixture.homeTeam, fixture.awayTeam));
-  if (matchId) {
-    ADMIN_MATCH_ID_BY_FIXTURE_ID.set(fixture.id, matchId);
+  const mapping = WORLD_CUP_GROUP_MATCH_BY_PAIR.get(buildMatchKey(fixture.homeTeam, fixture.awayTeam));
+  if (mapping) {
+    ADMIN_MATCH_BY_FIXTURE_ID.set(fixture.id, mapping);
   }
 });
 
 if (process.env.NODE_ENV !== "production" && typeof window === "undefined") {
   const groupFixtures = FIXTURES.filter((f) => f.stage === "groups");
-  const unmapped = groupFixtures.filter((f) => !ADMIN_MATCH_ID_BY_FIXTURE_ID.has(f.id));
+  const unmapped = groupFixtures.filter((f) => !ADMIN_MATCH_BY_FIXTURE_ID.has(f.id));
   if (unmapped.length > 0) {
     // eslint-disable-next-line no-console
     console.warn(
@@ -73,10 +78,12 @@ function isGroupConfigured(group: string, adminResults: AdminResults) {
   return unique.size === 4 && unique.has(1) && unique.has(2) && unique.has(3) && unique.has(4);
 }
 
-function isRoundConfigured(roundKey: KnockoutRoundKey, adminResults: AdminResults) {
-  const required = KNOCKOUT_ROUND_DEFS.find((r) => r.key === roundKey)?.count || 0;
-  const selected = adminResults.knockoutRounds[roundKey].filter(Boolean);
-  return selected.length === required;
+function getConfiguredKnockoutTeams(roundKey: KnockoutRoundKey, adminResults: AdminResults) {
+  const adminRoundKey = ADMIN_ROUND_BY_PICK_ROUND[roundKey];
+  const required = KNOCKOUT_ADMIN_COUNTS[adminRoundKey] || 0;
+  const selected = adminResults.knockoutRounds[adminRoundKey].filter(Boolean);
+  if (selected.length !== required) return null;
+  return new Set(selected);
 }
 
 function isSpecialConfigured(value: unknown) {
@@ -85,11 +92,12 @@ function isSpecialConfigured(value: unknown) {
 }
 
 function resolveGroupMatchResult(fixtureId: string, adminResults: AdminResults) {
-  const matchId = ADMIN_MATCH_ID_BY_FIXTURE_ID.get(fixtureId);
-  if (!matchId) return null;
-  const result = adminResults.matchResults[matchId];
+  const mapping = ADMIN_MATCH_BY_FIXTURE_ID.get(fixtureId);
+  if (!mapping) return null;
+  const result = adminResults.matchResults[mapping.matchId];
   if (typeof result?.home !== "number" || typeof result?.away !== "number") return null;
-  return result;
+  if (!mapping.swapped) return result;
+  return { ...result, home: result.away, away: result.home };
 }
 
 function getResultSign(home: number, away: number) {
@@ -97,7 +105,7 @@ function getResultSign(home: number, away: number) {
   return home > away ? ("home" as const) : ("away" as const);
 }
 
-function scoreMatchPick(pick: MatchPick, actualHome: number, actualAway: number, isDouble: boolean) {
+function scoreMatchPick(pick: MatchPick & { home: number; away: number }, actualHome: number, actualAway: number, isDouble: boolean) {
   const exact = pick.home === actualHome && pick.away === actualAway;
   if (exact) {
     return { points: isDouble ? SCORING.partidoDobleExacto : SCORING.resultadoExactoTotal, status: "correct" as const };
@@ -115,13 +123,14 @@ function scoreGroupMatchPicks(team: Team, adminResults: AdminResults) {
   const matchPicks = cloneMatchPicks(team.matchPicks);
   Object.entries(matchPicks).forEach(([fixtureId, pick]) => {
     const actual = resolveGroupMatchResult(fixtureId, adminResults);
-    if (!actual) {
+    const hasPickScore = typeof pick.home === "number" && typeof pick.away === "number";
+    if (!actual || !hasPickScore) {
       matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
       return;
     }
     const fixture = FIXTURE_BY_ID.get(fixtureId) as Fixture | undefined;
     const isDouble = Boolean(fixture?.group && team.doubleMatches?.[fixture.group] === fixtureId);
-    const next = scoreMatchPick(pick, actual.home as number, actual.away as number, isDouble);
+    const next = scoreMatchPick(pick as MatchPick & { home: number; away: number }, actual.home as number, actual.away as number, isDouble);
     matchPicks[fixtureId] = { ...pick, points: next.points, status: next.status };
     points += next.points;
   });
@@ -144,11 +153,10 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
   let points = 0;
   const knockoutPicks = cloneKnockoutPicks(team.knockoutPicks);
   KNOCKOUT_ROUND_DEFS.forEach((round) => {
-    const configured = isRoundConfigured(round.key, adminResults);
-    const actualTeams = configured ? new Set(adminResults.knockoutRounds[round.key].filter(Boolean)) : new Set<string>();
+    const actualTeams = getConfiguredKnockoutTeams(round.key, adminResults);
     const seen = new Set<string>();
     knockoutPicks[round.key] = (knockoutPicks[round.key] || []).map((pick) => {
-      if (!configured) return { ...pick, points: null, status: "pending" };
+      if (!actualTeams) return { ...pick, points: null, status: "pending" };
       const duplicate = seen.has(pick.country);
       seen.add(pick.country);
       const correct = !duplicate && actualTeams.has(pick.country);
@@ -187,7 +195,7 @@ function scoreSpecials(team: Team, adminResults: AdminResults) {
 export function scoreParticipants(participants: Team[], adminResults: AdminResults) {
   const baseTeams = participants.map((p) => cloneTeam(p));
 
-  if (!adminResults.configured) {
+  if (!hasConfiguredAdminResults(adminResults)) {
     baseTeams.sort((a, b) => {
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
       if (b.finalPhasePoints !== a.finalPhasePoints) return b.finalPhasePoints - a.finalPhasePoints;

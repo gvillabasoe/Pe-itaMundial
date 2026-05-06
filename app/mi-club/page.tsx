@@ -11,11 +11,11 @@ import { useAuth } from "@/components/auth-provider";
 import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, type Team } from "@/lib/data";
 import type { AdminResults } from "@/lib/admin-results";
 import { buildTeamCsv, buildTeamCsvFilename } from "@/lib/export-team-csv";
+import { EDIT_DEADLINE, isPastEditDeadline } from "@/lib/edit-deadline";
 import { useScoredParticipants, notifyUserTeamsUpdated } from "@/lib/use-scored-participants";
 
-// ── Fecha límite de edición: 10 junio 2026 21:00 CEST = 19:00 UTC ──
-const EDIT_DEADLINE = new Date("2026-06-10T19:00:00.000Z");
-function canEditPorra() { return Date.now() < EDIT_DEADLINE.getTime(); }
+// Fecha limite de edicion: 10 junio 2026 21:00 CEST = 19:00 UTC.
+function canEditPorra() { return !isPastEditDeadline(); }
 function editDeadlineText() {
   const remaining = EDIT_DEADLINE.getTime() - Date.now();
   if (remaining <= 0) return "Edición cerrada desde el 10 jun a las 21:00";
@@ -78,8 +78,8 @@ function calculateTeamProgress(team: Team): PorraProgress {
 // ════════════════════════════════════════════════════════════
 
 export default function MiClubPage() {
-  const { user, loginAsync, logout, favorites, toggleFavorite } = useAuth();
-  if (!user) return <LoginView onLogin={loginAsync} />;
+  const { user, login, logout, favorites, toggleFavorite } = useAuth();
+  if (!user) return <LoginView onLogin={login} />;
   return (
     <AuthenticatedMiClub
       user={user} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}
@@ -174,26 +174,20 @@ function AuthenticatedMiClub({
 // LOGIN VIEW — con acceso de admin restaurado
 // ════════════════════════════════════════════════════════════
 
-function LoginView({ onLogin }: { onLogin: (username: string, password: string) => Promise<boolean> }) {
+function LoginView({ onLogin }: { onLogin: (username: string, password: string) => boolean }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handle = async () => {
+  const handle = () => {
     if (!username || !password) { setError("Completa los campos"); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const ok = await onLogin(username, password);
-      // Solo mostramos error si el login terminó y falló
-      if (!ok) setError("Credenciales incorrectas");
-    } catch {
-      setError("Error de conexión. Inténtalo de nuevo.");
-    } finally {
+    setLoading(true); setError("");
+    window.setTimeout(() => {
+      if (!onLogin(username, password)) setError("Credenciales incorrectas");
       setLoading(false);
-    }
+    }, 600);
   };
 
   return (
@@ -210,14 +204,14 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
         <div className="mb-3 mt-6 text-left">
           <label className="mb-1 block text-[11px] text-text-muted">@usuario</label>
           <input className="input-field" placeholder="@usuario" value={username}
-            onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void handle()} />
+            onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handle()} />
         </div>
         <div className="mb-4 text-left">
           <label className="mb-1 block text-[11px] text-text-muted">Contraseña</label>
           <div className="relative">
             <input className="input-field !pr-10" type={showPass ? "text" : "password"}
               placeholder="••••••••" value={password}
-              onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void handle()} />
+              onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handle()} />
             <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
               onClick={() => setShowPass((v) => !v)}>
               {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -225,7 +219,7 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
           </div>
         </div>
         {error && <p className="mb-4 text-sm text-danger">{error}</p>}
-        <button className="btn btn-primary w-full" onClick={() => void handle()} disabled={loading}>
+        <button className="btn btn-primary w-full" onClick={handle} disabled={loading}>
           {loading ? "Entrando..." : "Entrar"}
         </button>
 
@@ -409,7 +403,7 @@ function DeletePorraButton({ team, onDeleted }: { team: Team; onDeleted: (id: st
       const response = await fetch("/api/user-teams/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId: team.id, userId: team.userId }),
+        body: JSON.stringify({ teamId: team.id }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Error al eliminar");
@@ -644,162 +638,36 @@ function GruposTab({ team, adminResults, showScores }: { team: Team; adminResult
 }
 
 function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; adminResults: AdminResults; showScores: boolean }) {
-  // ── Reconstrucción de participantes por ronda ──────────────────────────
-  // Dieciseisavos (32 equipos): 1.º y 2.º de cada grupo + mejores terceros
-  const round32Participants = useMemo(() => {
-    const result: string[] = [];
-    for (const group of Object.keys(GROUPS)) {
-      const picks = team.groupOrderPicks?.[group] || [];
-      if (picks[0]) result.push(picks[0]); // 1.º del grupo
-      if (picks[1]) result.push(picks[1]); // 2.º del grupo
-    }
-    // Mejores terceros seleccionados por el usuario
-    for (const group of (team.bestThirdGroups || [])) {
-      const picks = team.groupOrderPicks?.[group] || [];
-      if (picks[2]) result.push(picks[2]); // 3.º del grupo
-    }
-    return result;
-  }, [team]);
-
-  // Picks de cada ronda: equipos que el usuario eligió para AVANZAR
-  const picksMap = useMemo(() => {
-    const toSet = (key: string) =>
-      new Set((team.knockoutPicks?.[key] || []).map((p) => p.country).filter(Boolean));
-    return {
-      dieciseisavos: toSet("dieciseisavos"),
-      octavos: toSet("octavos"),
-      cuartos: toSet("cuartos"),
-      semis: toSet("semis"),
-      final: new Set([team.championPick].filter(Boolean) as string[]),
-    };
-  }, [team]);
-
-  // Cada ronda: participantes = picks de la ronda anterior
-  const rounds = [
-    {
-      key: "dieciseisavos",
-      name: "Dieciseisavos de Final",
-      participants: round32Participants,         // 32 equipos
-      picks: picksMap.dieciseisavos,             // 16 que avanzan
-    },
-    {
-      key: "octavos",
-      name: "Octavos de Final",
-      participants: Array.from(picksMap.dieciseisavos), // 16 equipos
-      picks: picksMap.octavos,                          // 8 que avanzan
-    },
-    {
-      key: "cuartos",
-      name: "Cuartos de Final",
-      participants: Array.from(picksMap.octavos), // 8 equipos
-      picks: picksMap.cuartos,                    // 4 que avanzan
-    },
-    {
-      key: "semis",
-      name: "Semifinales",
-      participants: Array.from(picksMap.cuartos), // 4 equipos
-      picks: picksMap.semis,                      // 2 que avanzan
-    },
-    {
-      key: "final",
-      name: "Final",
-      participants: Array.from(picksMap.semis),   // 2 equipos
-      picks: picksMap.final,                      // 1 campeón
-    },
-  ];
-
   return (
     <div className="space-y-4 animate-fade-in">
-      {rounds.map((round) => {
-        const adminTeams = new Set(
-          (adminResults.knockoutRounds?.[round.key as import("@/lib/admin-results").KnockoutRoundKey] || []).filter(Boolean)
-        );
-        const adminHasData = adminTeams.size > 0;
-
-        const participants = round.participants;
-
+      {KNOCKOUT_ROUND_DEFS.map((round) => {
+        const picks = team.knockoutPicks?.[round.key] || [];
         return (
           <div key={round.key} className="card">
-            <div className="flex items-center justify-between mb-2.5">
-              <p className="text-[11px] font-bold text-text-muted uppercase tracking-wide">
-                {round.name}
-              </p>
-              <span className="badge badge-muted text-[9px]">
-                {participants.length} equipos
-              </span>
-            </div>
-
-            {participants.length === 0 ? (
-              <p className="text-[11px] text-text-muted italic">
-                Completa la fase de grupos para ver esta ronda.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {participants.map((country, idx) => {
-                  const advancePick = round.picks.has(country);
-                  const correct = adminHasData && showScores && adminTeams.has(country);
-                  const wrong = adminHasData && showScores && advancePick && !adminTeams.has(country);
-
-                  let bg = advancePick
-                    ? "rgba(240,65,122,0.10)"
-                    : "rgb(var(--bg-elevated))";
-                  let border = advancePick
-                    ? "1px solid rgba(240,65,122,0.28)"
-                    : "1px solid rgb(var(--border-subtle))";
-
-                  if (showScores && adminHasData) {
-                    if (correct && advancePick) {
-                      bg = "rgb(var(--success-soft))";
-                      border = "1px solid rgba(var(--success), 0.3)";
-                    } else if (wrong) {
-                      bg = "rgb(var(--danger-soft))";
-                      border = "1px solid rgba(var(--danger), 0.3)";
-                    }
-                  }
-
-                  // Buscar puntos del pick original
-                  const pickData = (team.knockoutPicks?.[round.key as import("@/lib/admin-results").KnockoutRoundKey] || []).find(
-                    (p) => p.country === country
-                  );
-
-                  return (
-                    <span
-                      key={`${round.key}-${country}-${idx}`}
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-all"
-                      style={{ background: bg, border, color: "rgb(var(--text-warm))" }}
-                      title={advancePick ? "Elegido para avanzar" : "Eliminado en esta ronda"}
-                    >
-                      <Flag country={country} size="sm" />
-                      <span>{country}</span>
-                      {advancePick && (
-                        <span
-                          className="text-[9px] font-black"
-                          style={{ color: "#F0417A" }}
-                        >
-                          →
-                        </span>
-                      )}
-                      {showScores && pickData?.points != null && pickData.points > 0 && (
-                        <span className="text-success font-bold">+{pickData.points}</span>
-                      )}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Leyenda compacta */}
-            <div className="mt-2 flex items-center gap-3 text-[9px] text-text-faint">
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-accent-versus/30 border border-accent-versus/40" />
-                Elegido para avanzar
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full"
-                  style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }} />
-                Eliminado
-              </span>
-            </div>
+            <p className="text-[11px] font-bold text-text-muted mb-2">{round.name}</p>
+            {picks.length === 0
+              ? <p className="text-[11px] text-text-muted italic">Sin picks</p>
+              : <div className="flex flex-wrap gap-1.5">
+                  {picks.map((pick, idx) => {
+                    const adminTeams = new Set((adminResults.knockoutRounds?.[round.key] || []).filter(Boolean));
+                    const correct = adminTeams.size > 0 && adminTeams.has(pick.country);
+                    return (
+                      <span key={`${pick.country}-${idx}`}
+                        className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium"
+                        style={{
+                          background: showScores && adminTeams.size > 0
+                            ? (correct ? "rgb(var(--success-soft))" : "rgb(var(--danger-soft))")
+                            : "rgb(var(--bg-elevated))",
+                          color: "rgb(var(--text-warm))",
+                          border: "1px solid rgb(var(--border-subtle))",
+                        }}>
+                        <Flag country={pick.country} size="sm" /> {pick.country}
+                        {showScores && pick.points != null && pick.points > 0 &&
+                          <span className="text-success font-bold ml-0.5">+{pick.points}</span>}
+                      </span>
+                    );
+                  })}
+                </div>}
           </div>
         );
       })}

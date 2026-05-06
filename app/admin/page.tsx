@@ -643,7 +643,7 @@ function PorrasManagementSection({
       const response = await fetch("/api/user-teams/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId: team.id, userId: team.userId }),
+        body: JSON.stringify({ teamId: team.id }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Error al eliminar");

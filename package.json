@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check:flags": "node scripts/validate-flags.mjs"
+    "check:flags": "node scripts/validate-flags.mjs",
+    "test": "node scripts/run-critical-tests.mjs",
+    "test:critical": "node scripts/run-critical-tests.mjs"
   },
   "dependencies": {
     "next": "^14.2.0",

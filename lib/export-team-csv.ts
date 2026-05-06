@@ -1,5 +1,5 @@
 import { FIXTURES, GROUPS, SCORING, type Team } from "@/lib/data";
-import type { AdminResults } from "@/lib/admin-results";
+import { hasConfiguredAdminResults, type AdminResults } from "@/lib/admin-results";
 import { CSV_TEMPLATE_HEADERS } from "@/lib/csv-template";
 
 const TEMPLATE_TEAM_NAMES: Record<string, string> = {
@@ -61,13 +61,14 @@ function matchBase(homeTeam: string, awayTeam: string) {
   return `${tokenForTeam(homeTeam)}${tokenForTeam(awayTeam)}`;
 }
 
-function resultSign(home: number, away: number) {
+function resultSign(home: number | null, away: number | null) {
+  if (typeof home !== "number" || typeof away !== "number") return "";
   if (home === away) return "X";
   return home > away ? "1" : "2";
 }
 
 function getGroupPositionPoint(team: Team, group: string, country: string, adminResults?: AdminResults) {
-  if (!adminResults?.configured) return "";
+  if (!adminResults || !hasConfiguredAdminResults(adminResults)) return "";
   const picks = team.groupOrderPicks[group] || [];
   const predictedPosition = picks.findIndex((item) => item === country);
   if (predictedPosition < 0) return 0;
@@ -75,8 +76,16 @@ function getGroupPositionPoint(team: Team, group: string, country: string, admin
 }
 
 function getExactPoints(matches: boolean, points: number, adminResults?: AdminResults) {
-  if (!adminResults?.configured) return "";
+  if (!adminResults || !hasConfiguredAdminResults(adminResults)) return "";
   return matches ? points : 0;
+}
+
+function hasConfiguredText(value: unknown) {
+  return String(value ?? "").trim() !== "";
+}
+
+function hasConfiguredNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function escapeCsvCell(value: unknown) {
@@ -99,7 +108,8 @@ export function buildTeamCsv(team: Team, adminResults?: AdminResults) {
     if (!pick) return;
 
     const base = matchBase(fixture.homeTeam, fixture.awayTeam);
-    row[`${base}_RTO`] = `${pick.home}-${pick.away}`;
+    const hasScore = typeof pick.home === "number" && typeof pick.away === "number";
+    row[`${base}_RTO`] = hasScore ? `${pick.home}-${pick.away}` : "";
     row[`${base}_1X2`] = resultSign(pick.home, pick.away);
     row[`${base}_DOB`] = team.doubleMatches[fixture.group || ""] === fixture.id ? "TRUE" : "FALSE";
     row[`${base}_PTOS`] = typeof pick.points === "number" ? pick.points : "";
@@ -145,32 +155,32 @@ export function buildTeamCsv(team: Team, adminResults?: AdminResults) {
   });
 
   row.TercerPuesto = team.thirdPlacePick;
-  row.TercerPuesto_PTOS = getExactPoints(team.thirdPlacePick === adminResults?.podium.tercero, SCORING.posicionesFinales.tercero, adminResults);
+  row.TercerPuesto_PTOS = getExactPoints(hasConfiguredText(adminResults?.podium.tercero) && team.thirdPlacePick === adminResults?.podium.tercero, SCORING.posicionesFinales.tercero, adminResults);
   row.Subcampeon = team.runnerUpPick;
-  row.Subcampeon_PTOS = getExactPoints(team.runnerUpPick === adminResults?.podium.subcampeon, SCORING.posicionesFinales.subcampeon, adminResults);
+  row.Subcampeon_PTOS = getExactPoints(hasConfiguredText(adminResults?.podium.subcampeon) && team.runnerUpPick === adminResults?.podium.subcampeon, SCORING.posicionesFinales.subcampeon, adminResults);
   row.Campeon = team.championPick;
-  row.Campeon_PTOS = getExactPoints(team.championPick === adminResults?.podium.campeon, SCORING.posicionesFinales.campeon, adminResults);
+  row.Campeon_PTOS = getExactPoints(hasConfiguredText(adminResults?.podium.campeon) && team.championPick === adminResults?.podium.campeon, SCORING.posicionesFinales.campeon, adminResults);
 
   row.MejorJugador = team.specials.mejorJugador;
-  row.MejorJugador_PTOS = getExactPoints(team.specials.mejorJugador === adminResults?.specialResults.mejorJugador, SCORING.especiales.mejorJugador, adminResults);
+  row.MejorJugador_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.mejorJugador) && team.specials.mejorJugador === adminResults?.specialResults.mejorJugador, SCORING.especiales.mejorJugador, adminResults);
   row.MejorJugadorJoven = team.specials.mejorJoven;
-  row.MejorJugadorJoven_PTOS = getExactPoints(team.specials.mejorJoven === adminResults?.specialResults.mejorJoven, SCORING.especiales.mejorJoven, adminResults);
+  row.MejorJugadorJoven_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.mejorJoven) && team.specials.mejorJoven === adminResults?.specialResults.mejorJoven, SCORING.especiales.mejorJoven, adminResults);
   row.MejorPortero = team.specials.mejorPortero;
-  row.MejorPortero_PTOS = getExactPoints(team.specials.mejorPortero === adminResults?.specialResults.mejorPortero, SCORING.especiales.mejorPortero, adminResults);
+  row.MejorPortero_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.mejorPortero) && team.specials.mejorPortero === adminResults?.specialResults.mejorPortero, SCORING.especiales.mejorPortero, adminResults);
   row.MaximoGoleador = team.specials.maxGoleador;
-  row.MaximoGoleador_PTOS = getExactPoints(team.specials.maxGoleador === adminResults?.specialResults.maxGoleador, SCORING.especiales.maxGoleador, adminResults);
+  row.MaximoGoleador_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.maxGoleador) && team.specials.maxGoleador === adminResults?.specialResults.maxGoleador, SCORING.especiales.maxGoleador, adminResults);
   row.MaximoAsistente = team.specials.maxAsistente;
-  row.MaximoAsistente_PTOS = getExactPoints(team.specials.maxAsistente === adminResults?.specialResults.maxAsistente, SCORING.especiales.maxAsistente, adminResults);
+  row.MaximoAsistente_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.maxAsistente) && team.specials.maxAsistente === adminResults?.specialResults.maxAsistente, SCORING.especiales.maxAsistente, adminResults);
   row.MaximoGoleadorESP = team.specials.maxGoleadorEsp;
-  row.MaximoGoleadorESP_PTOS = getExactPoints(team.specials.maxGoleadorEsp === adminResults?.specialResults.maxGoleadorEsp, SCORING.especiales.maxGoleadorEsp, adminResults);
+  row.MaximoGoleadorESP_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.maxGoleadorEsp) && team.specials.maxGoleadorEsp === adminResults?.specialResults.maxGoleadorEsp, SCORING.especiales.maxGoleadorEsp, adminResults);
   row.SeleccionRevelacion = team.specials.revelacion;
-  row.SeleccionRevelacion_PTOS = getExactPoints(team.specials.revelacion === adminResults?.specialResults.revelacion, SCORING.especiales.revelacion, adminResults);
+  row.SeleccionRevelacion_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.revelacion) && team.specials.revelacion === adminResults?.specialResults.revelacion, SCORING.especiales.revelacion, adminResults);
   row.SeleccionDecepcion = team.specials.decepcion;
-  row.SeleccionDecepcion_PTOS = getExactPoints(team.specials.decepcion === adminResults?.specialResults.decepcion, SCORING.especiales.decepcion, adminResults);
+  row.SeleccionDecepcion_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.decepcion) && team.specials.decepcion === adminResults?.specialResults.decepcion, SCORING.especiales.decepcion, adminResults);
   row.MinutoPrimerGol = team.specials.minutoPrimerGol;
-  row.MinutoPrimerGol_PTOS = getExactPoints(team.specials.minutoPrimerGol === adminResults?.specialResults.minutoPrimerGol, SCORING.especiales.minutoPrimerGol, adminResults);
+  row.MinutoPrimerGol_PTOS = getExactPoints(hasConfiguredNumber(adminResults?.specialResults.minutoPrimerGol) && team.specials.minutoPrimerGol === adminResults?.specialResults.minutoPrimerGol, SCORING.especiales.minutoPrimerGol, adminResults);
   row.PrimerGolESP = team.specials.primerGolEsp;
-  row.PrimerGolESP_PTOS = getExactPoints(team.specials.primerGolEsp === adminResults?.specialResults.primerGolEsp, SCORING.especiales.primerGolEsp, adminResults);
+  row.PrimerGolESP_PTOS = getExactPoints(hasConfiguredText(adminResults?.specialResults.primerGolEsp) && team.specials.primerGolEsp === adminResults?.specialResults.primerGolEsp, SCORING.especiales.primerGolEsp, adminResults);
 
   const headerLine = CSV_TEMPLATE_HEADERS.join(",");
   const valueLine = CSV_TEMPLATE_HEADERS.map((header) => escapeCsvCell(row[header])).join(",");

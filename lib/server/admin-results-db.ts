@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import type { PoolClient } from "pg";
 import type { AdminResults } from "@/lib/admin-results";
 import { createDefaultAdminResults, hasConfiguredAdminResults, sanitizeAdminResults } from "@/lib/admin-results";
-import { queryDb, withTransaction } from "@/lib/db";
+import { queryDb, shouldRunRuntimeSchemaMigrations, withTransaction } from "@/lib/db";
 
 type AdminResultsColumnRow = {
   column_name: string;
@@ -485,6 +485,7 @@ async function normalizeCanonicalColumns(columns: AdminResultsColumnRow[]) {
 }
 
 async function ensureAdminResultsTableSchemaImpl() {
+  if (!shouldRunRuntimeSchemaMigrations()) return;
   await queryDb(
     `
       create table if not exists admin_results (

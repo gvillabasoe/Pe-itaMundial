@@ -30,9 +30,16 @@ function cleanInteger(value: unknown, fallback = 0) {
   return Math.floor(numeric);
 }
 
+function cleanNullableInteger(value: unknown) {
+  if (value === "" || value === null || value === undefined) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.floor(numeric);
+}
+
 function sanitizeMatchPick(value: Partial<MatchPick> | null | undefined): MatchPick {
-  const home = cleanInteger(value?.home, 0);
-  const away = cleanInteger(value?.away, 0);
+  const home = cleanNullableInteger(value?.home);
+  const away = cleanNullableInteger(value?.away);
 
   return {
     home,

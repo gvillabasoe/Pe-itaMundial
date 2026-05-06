@@ -9,7 +9,8 @@ import {
   sanitizeUserTeamsStore,
   type UserTeamsStore,
 } from "@/lib/user-teams";
-import { queryDb, withTransaction } from "@/lib/db";
+import { queryDb, shouldRunRuntimeSchemaMigrations, withTransaction } from "@/lib/db";
+import { assertUserTeamMutationAllowed } from "@/lib/server/user-team-permissions";
 
 type UserTeamRow = {
   id: string;
@@ -214,6 +215,7 @@ async function relaxUnexpectedRequiredColumns(columns: UserTeamColumnRow[]) {
 }
 
 async function ensureUserTeamsTableSchemaImpl() {
+  if (!shouldRunRuntimeSchemaMigrations()) return;
   await queryDb(
     `
       create table if not exists user_teams (
@@ -535,7 +537,7 @@ export async function deleteUserTeamFromDb(teamId: string, userId?: string) {
   return { id: result.rows[0].id };
 }
 
-export async function saveUserTeamToDb(rawEntry: Partial<Team>) {
+export async function saveUserTeamToDb(rawEntry: Partial<Team>, options: { actorUserId?: string | null; isAdmin?: boolean } = {}) {
   await ensureUserTeamsTableSchema();
 
   const entry = sanitizeUserTeam(rawEntry);
@@ -543,6 +545,14 @@ export async function saveUserTeamToDb(rawEntry: Partial<Team>) {
   if (!entry) {
     throw new Error("La porra no es válida.");
   }
+
+  assertUserTeamMutationAllowed({
+    operation: "update",
+    isAdmin: Boolean(options.isAdmin),
+    actorUserId: options.actorUserId,
+    ownerUserId: entry.userId,
+    isPastDeadline: false,
+  });
 
   const savedEntry: Team = {
     ...entry,
@@ -552,8 +562,8 @@ export async function saveUserTeamToDb(rawEntry: Partial<Team>) {
   };
 
   await withTransaction(async (client) => {
-    const existing = await client.query<{ id: string }>(
-      "select id from user_teams where id = $1 limit 1",
+    const existing = await client.query<{ id: string; user_id: string }>(
+      "select id, user_id from user_teams where id = $1 limit 1 for update",
       [savedEntry.id]
     );
 
@@ -562,6 +572,15 @@ export async function saveUserTeamToDb(rawEntry: Partial<Team>) {
       if (totalForUser >= 3) {
         throw new Error("Cada usuario puede tener un máximo de 3 porras.");
       }
+    } else {
+      assertUserTeamMutationAllowed({
+        operation: "update",
+        isAdmin: Boolean(options.isAdmin),
+        actorUserId: options.actorUserId,
+        ownerUserId: savedEntry.userId,
+        existingOwnerUserId: existing.rows[0].user_id,
+        isPastDeadline: false,
+      });
     }
 
     const columns = await listUserTeamsColumnsWithClient(client);

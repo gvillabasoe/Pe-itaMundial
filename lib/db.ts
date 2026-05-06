@@ -29,6 +29,10 @@ function createPool() {
   });
 }
 
+export function shouldRunRuntimeSchemaMigrations() {
+  return process.env.DISABLE_RUNTIME_SCHEMA_MIGRATIONS !== "1";
+}
+
 export function getDb() {
   if (!globalThis.__penitaPgPool__) {
     globalThis.__penitaPgPool__ = createPool();

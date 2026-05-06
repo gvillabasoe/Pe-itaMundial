@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
+import { getUserSessionFromRequest } from "@/lib/user-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +20,15 @@ function jsonError(message: string, status = 404) {
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const id = url.searchParams.get("id")?.trim();
+  const session = getUserSessionFromRequest(request);
+  const id = (url.searchParams.get("id") || session?.userId || "").trim();
 
   if (!id) {
     return jsonError("Falta el id de usuario", 400);
+  }
+
+  if (session && id !== session.userId) {
+    return jsonError("No autorizado", 403);
   }
 
   const pool = getDbPool();

@@ -171,7 +171,13 @@ export function isConfiguredMatchResult(value?: AdminMatchResult | null): boolea
 
 export function hasConfiguredAdminResults(value: AdminResults): boolean {
   if (value.configured) return true;
-  return Object.values(value.matchResults).some(isConfiguredMatchResult);
+  if (Object.values(value.matchResults).some(isConfiguredMatchResult)) return true;
+  if (Object.values(value.groupPositions).some((position) => position > 0)) return true;
+  if (Object.values(value.knockoutRounds).some((round) => round.some(Boolean))) return true;
+  if (value.podium.campeon || value.podium.subcampeon || value.podium.tercero) return true;
+  return Object.entries(value.specialResults).some(([key, result]) =>
+    key === "minutoPrimerGol" ? result !== null && result !== undefined : String(result ?? "").trim() !== ""
+  );
 }
 
 export function sanitizeAdminResults(value: unknown): AdminResults {
@@ -205,7 +211,7 @@ export function sanitizeAdminResults(value: unknown): AdminResults {
   const rawSpecials = raw.specialResults && typeof raw.specialResults === "object"
     ? (raw.specialResults as Record<string, unknown>) : {};
 
-  return {
+  const sanitized: AdminResults = {
     version: ADMIN_RESULTS_VERSION,
     configured: Boolean(raw.configured),
     savedAt: typeof raw.savedAt === "string" && raw.savedAt ? raw.savedAt : defaults.savedAt,
@@ -230,6 +236,9 @@ export function sanitizeAdminResults(value: unknown): AdminResults {
       minutoPrimerGol: cleanMinute(rawSpecials.minutoPrimerGol),
     },
   };
+
+  sanitized.configured = hasConfiguredAdminResults(sanitized);
+  return sanitized;
 }
 
 export function formatAdminSavedAt(savedAt: string | null | undefined): string {

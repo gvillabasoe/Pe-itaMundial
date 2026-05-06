@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getAdminResultsFromDb, saveAdminResultsToDb } from "@/lib/server/admin-results-db";
-import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
+import { ADMIN_COOKIE_NAME, isValidAdminSessionValue } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const cookieStore = cookies();
-  const isAdmin = cookieStore.get(ADMIN_COOKIE_NAME)?.value === "1";
+  const isAdmin = await isValidAdminSessionValue(cookieStore.get(ADMIN_COOKIE_NAME)?.value);
 
   if (!isAdmin) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401, headers: responseHeaders() });

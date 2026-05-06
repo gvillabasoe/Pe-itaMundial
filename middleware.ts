@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
+import { ADMIN_COOKIE_NAME, isValidAdminSessionValue } from "@/lib/admin-session";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (!pathname.startsWith("/admin")) {
@@ -9,7 +9,7 @@ export function middleware(request: NextRequest) {
   }
 
   const isLoginRoute = pathname === "/admin/login" || pathname === "/admin/login/";
-  const hasSession = request.cookies.get(ADMIN_COOKIE_NAME)?.value === "1";
+  const hasSession = await isValidAdminSessionValue(request.cookies.get(ADMIN_COOKIE_NAME)?.value);
 
   if (!hasSession && !isLoginRoute) {
     const url = request.nextUrl.clone();

@@ -10,8 +10,8 @@ export interface User {
 }
 
 export interface MatchPick {
-  home: number;
-  away: number;
+  home: number | null;
+  away: number | null;
   points: number | null;
   status: "pending" | "correct" | "sign" | "wrong";
 }
@@ -389,7 +389,8 @@ export function computeVersusStats(base: Team, ref: Team) {
   // Compare match picks
   for (const fid of Object.keys(base.matchPicks)) {
     const bp = base.matchPicks[fid]; const rp = ref.matchPicks?.[fid];
-    if (rp && bp.home === rp.home && bp.away === rp.away) same++; else diff++;
+    const bothScored = bp && rp && typeof bp.home === "number" && typeof bp.away === "number" && typeof rp.home === "number" && typeof rp.away === "number";
+    if (bothScored && bp.home === rp.home && bp.away === rp.away) same++; else diff++;
   }
   // Compare group order
   for (const g of Object.keys(GROUPS)) {

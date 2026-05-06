@@ -295,7 +295,7 @@ function MatchBreakdown({ team }: { team: Team }) {
                     border: isDouble ? "1px solid rgba(var(--gold),0.3)" : undefined,
                   }}
                 >
-                  {pick.home}-{pick.away}
+                  {typeof pick.home === "number" && typeof pick.away === "number" ? `${pick.home}-${pick.away}` : "·-·"}
                 </span>
                 <div className="flex items-center gap-1 flex-1 min-w-0 justify-end">
                   <span className="truncate">{fixture.awayTeam}</span>
