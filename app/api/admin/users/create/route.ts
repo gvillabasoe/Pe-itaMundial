@@ -2,21 +2,15 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomBytes, scryptSync } from "node:crypto";
 import { queryDb } from "@/lib/db";
+import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// ════════════════════════════════════════════════════════════
-// En Next.js 14 App Router, los Route Handlers deben usar
-// cookies() de next/headers para leer cookies de forma fiable.
-// request.headers.get("cookie") no funciona correctamente en
-// este contexto — de ahí el error "No autorizado".
-// ════════════════════════════════════════════════════════════
-
 function isAdmin(): boolean {
   try {
     const cookieStore = cookies();
-    return cookieStore.get("admin_session")?.value === "1";
+    return cookieStore.get(ADMIN_COOKIE_NAME)?.value === "1";
   } catch {
     return false;
   }

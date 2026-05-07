@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { queryDb } from "@/lib/db";
+import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,8 +36,7 @@ export async function POST(request: Request) {
     const isOwner = row.user_id === userId;
 
     // Comprobar si hay cookie de admin para permitir eliminar cualquier porra
-    const cookieHeader = request.headers.get("cookie") || "";
-    const isAdmin = cookieHeader.includes("admin_session=1");
+    const isAdmin = cookies().get(ADMIN_COOKIE_NAME)?.value === "1";
 
     if (!isOwner && !isAdmin) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
