@@ -99,8 +99,11 @@ export function buildTeamCsv(team: Team, adminResults?: AdminResults) {
     if (!pick) return;
 
     const base = matchBase(fixture.homeTeam, fixture.awayTeam);
-    row[`${base}_RTO`] = `${pick.home}-${pick.away}`;
-    row[`${base}_1X2`] = resultSign(pick.home, pick.away);
+    const home = pick.home;
+    const away = pick.away;
+    const hasScore = typeof home === "number" && typeof away === "number";
+    row[`${base}_RTO`] = hasScore ? `${home}-${away}` : "";
+    row[`${base}_1X2`] = hasScore ? resultSign(home, away) : "";
     row[`${base}_DOB`] = team.doubleMatches[fixture.group || ""] === fixture.id ? "TRUE" : "FALSE";
     row[`${base}_PTOS`] = typeof pick.points === "number" ? pick.points : "";
   });

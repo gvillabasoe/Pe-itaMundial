@@ -92,12 +92,12 @@ function getResultSign(home: number, away: number) {
   return home > away ? ("home" as const) : ("away" as const);
 }
 
-function scoreMatchPick(pick: MatchPick, actualHome: number, actualAway: number, isDouble: boolean) {
+function scoreMatchPick(pick: { home: number; away: number }, actualHome: number, actualAway: number, isDouble: boolean) {
   const exact = pick.home === actualHome && pick.away === actualAway;
   if (exact) {
     return { points: isDouble ? SCORING.partidoDobleExacto : SCORING.resultadoExactoTotal, status: "correct" as const };
   }
-  const ps = getResultSign(pick.home as number, pick.away as number);
+  const ps = getResultSign(pick.home, pick.away);
   const as_ = getResultSign(actualHome, actualAway);
   if (ps === as_) {
     return { points: isDouble ? SCORING.partidoDobleSigno : SCORING.signo, status: "sign" as const };
@@ -114,13 +114,13 @@ function scoreGroupMatchPicks(team: Team, adminResults: AdminResults) {
       matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
       return;
     }
-    if (pick.home === null || pick.away === null) {
+    if (typeof pick.home !== "number" || typeof pick.away !== "number") {
       matchPicks[fixtureId] = { ...pick, points: null, status: "pending" };
       return;
     }
     const fixture = FIXTURE_BY_ID.get(fixtureId) as Fixture | undefined;
     const isDouble = Boolean(fixture?.group && team.doubleMatches?.[fixture.group] === fixtureId);
-    const next = scoreMatchPick(pick, actual.home as number, actual.away as number, isDouble);
+    const next = scoreMatchPick({ home: pick.home, away: pick.away }, actual.home as number, actual.away as number, isDouble);
     matchPicks[fixtureId] = { ...pick, points: next.points, status: next.status };
     points += next.points;
   });

@@ -30,16 +30,24 @@ function cleanInteger(value: unknown, fallback = 0) {
   return Math.floor(numeric);
 }
 
+function cleanNullableInteger(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.floor(numeric);
+}
+
 function sanitizeMatchPick(value: Partial<MatchPick> | null | undefined): MatchPick {
-  const home = cleanInteger(value?.home, 0);
-  const away = cleanInteger(value?.away, 0);
+  const home = cleanNullableInteger(value?.home);
+  const away = cleanNullableInteger(value?.away);
+  const hasScore = typeof home === "number" && typeof away === "number";
 
   return {
     home,
     away,
-    points: typeof value?.points === "number" ? Math.floor(value.points) : null,
+    points: hasScore && typeof value?.points === "number" ? Math.floor(value.points) : null,
     status:
-      value?.status === "correct" || value?.status === "sign" || value?.status === "wrong"
+      hasScore && (value?.status === "correct" || value?.status === "sign" || value?.status === "wrong")
         ? value.status
         : "pending",
   };

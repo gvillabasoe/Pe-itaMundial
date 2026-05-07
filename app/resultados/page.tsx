@@ -301,6 +301,7 @@ function formatPredictionScore(pick: MatchPick | undefined, flipped: boolean): s
   if (!pick) return null;
   const h = flipped ? pick.away : pick.home;
   const a = flipped ? pick.home : pick.away;
+  if (typeof h !== "number" || typeof a !== "number") return null;
   return `${h} - ${a}`;
 }
 

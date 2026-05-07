@@ -481,8 +481,8 @@ export function buildStoredTeamFromDraft(draft: PorraDraft): Team {
       return [
         fixture.id,
         {
-          home: parseDraftScore(pick?.home) ?? 0,
-          away: parseDraftScore(pick?.away) ?? 0,
+          home: parseDraftScore(pick?.home),
+          away: parseDraftScore(pick?.away),
           points: null,
           status: "pending" as const,
         },

@@ -10,8 +10,8 @@ export interface User {
 }
 
 export interface MatchPick {
-  home: number;
-  away: number;
+  home: number | null;
+  away: number | null;
   points: number | null;
   status: "pending" | "correct" | "sign" | "wrong";
 }
@@ -386,10 +386,13 @@ export function compareSpecials(base: Team, ref: Team | null, consensusSpecials:
 /** Count matching / differing picks between two teams */
 export function computeVersusStats(base: Team, ref: Team) {
   let same = 0; let diff = 0;
-  // Compare match picks
+  // Compare only completed match picks. Empty scores are not predictions.
   for (const fid of Object.keys(base.matchPicks)) {
     const bp = base.matchPicks[fid]; const rp = ref.matchPicks?.[fid];
-    if (rp && bp.home === rp.home && bp.away === rp.away) same++; else diff++;
+    if (!bp || !rp) continue;
+    if (typeof bp.home !== "number" || typeof bp.away !== "number") continue;
+    if (typeof rp.home !== "number" || typeof rp.away !== "number") continue;
+    if (bp.home === rp.home && bp.away === rp.away) same++; else diff++;
   }
   // Compare group order
   for (const g of Object.keys(GROUPS)) {
