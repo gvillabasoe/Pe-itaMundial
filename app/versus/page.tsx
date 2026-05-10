@@ -48,17 +48,61 @@ function computeConsensusGroupOrder(teams: Team[]): Record<string, string[]> {
   return result;
 }
 
-/** Consenso de picks de eliminatorias: los N equipos más repetidos por ronda */
+/** Reconstruye los 32 participantes de dieciseisavos a partir de los picks de grupo:
+ *  1.º + 2.º de cada uno de los 12 grupos (24) + mejores 3.º elegidos (8) = 32. */
+function reconstructRound32Participants(team: Team): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const group of Object.keys(GROUPS)) {
+    const picks = team.groupOrderPicks?.[group] || [];
+    [0, 1].forEach((i) => {
+      if (picks[i] && !seen.has(picks[i])) {
+        result.push(picks[i]);
+        seen.add(picks[i]);
+      }
+    });
+  }
+  for (const group of (team.bestThirdGroups || [])) {
+    const picks = team.groupOrderPicks?.[group] || [];
+    if (picks[2] && !seen.has(picks[2])) {
+      result.push(picks[2]);
+      seen.add(picks[2]);
+    }
+  }
+  return result;
+}
+
+/** Devuelve los picks "para una ronda" según el modelo shift:
+ *   dieciseisavos → reconstructed 32 (de groupOrderPicks + bestThirdGroups)
+ *   octavos       → knockoutPicks.dieciseisavos (16)
+ *   cuartos       → knockoutPicks.octavos (8)
+ *   semis         → knockoutPicks.cuartos (4)
+ *   final         → knockoutPicks.semis (2) */
+function getRoundParticipants(team: Team, roundKey: string): string[] {
+  if (roundKey === "dieciseisavos") return reconstructRound32Participants(team);
+  const sourceMap: Record<string, string> = {
+    octavos: "dieciseisavos",
+    cuartos: "octavos",
+    semis: "cuartos",
+    final: "semis",
+  };
+  const sourceKey = sourceMap[roundKey];
+  if (!sourceKey) return [];
+  return (team.knockoutPicks?.[sourceKey as never] || []).map((p) => p.country).filter(Boolean);
+}
+
+/** Consenso de eliminatorias: los N equipos más repetidos por ronda.
+ *  Usa el modelo shift — para dieciseisavos toma los 32 reconstruidos de cada
+ *  participante; para octavos toma sus 16 advance picks de dieciseisavos; etc. */
 function computeConsensusKnockouts(teams: Team[]): Record<string, string[]> {
   const result: Record<string, string[]> = {};
   for (const round of KNOCKOUT_ROUND_DEFS) {
     const freq: Record<string, number> = {};
     teams.forEach((t) => {
-      (t.knockoutPicks?.[round.key] || []).forEach((pick) => {
-        if (pick.country) freq[pick.country] = (freq[pick.country] || 0) + 1;
+      getRoundParticipants(t, round.key).forEach((country) => {
+        if (country) freq[country] = (freq[country] || 0) + 1;
       });
     });
-    // Usamos KNOCKOUT_ADMIN_COUNTS para el número total de equipos en la ronda
     const adminCount = KNOCKOUT_ADMIN_COUNTS[round.key as keyof typeof KNOCKOUT_ADMIN_COUNTS] ?? round.count;
     result[round.key] = Object.entries(freq)
       .sort((a, b) => b[1] - a[1])
@@ -182,15 +226,15 @@ export default function VersusPage() {
       }
     }
 
-    // Picks de eliminatorias (comparar set de equipos)
+    // Picks de eliminatorias (comparar set de equipos por ronda usando shift)
     for (const round of KNOCKOUT_ROUND_DEFS) {
-      const myPicks = new Set((baseTeam.knockoutPicks?.[round.key] || []).map((p) => p.country).filter(Boolean));
+      const myPicks = new Set(getRoundParticipants(baseTeam, round.key));
       const consPicks = new Set(consensusKnockouts[round.key] || []);
       const union = new Set([...myPicks, ...consPicks]);
-      union.forEach((team) => {
-        if (team) {
+      union.forEach((t) => {
+        if (t) {
           total++;
-          if (myPicks.has(team) && consPicks.has(team)) same++;
+          if (myPicks.has(t) && consPicks.has(t)) same++;
         }
       });
     }
@@ -411,13 +455,16 @@ export default function VersusPage() {
         <div className="flex flex-col gap-3 animate-fade-in">
           {KNOCKOUT_ROUND_DEFS.map((round) => {
             const adminCount = KNOCKOUT_ADMIN_COUNTS[round.key as keyof typeof KNOCKOUT_ADMIN_COUNTS] ?? round.count;
-            const basePicks = baseTeam.knockoutPicks?.[round.key] || [];
-            const baseCountries = new Set(basePicks.map((p) => p.country).filter(Boolean));
+            // ── Modelo shift: para dieciseisavos toma 32 reconstruidos; para
+            //    octavos/cuartos/semis/final toma los advance picks de la ronda
+            //    anterior. Así comparamos 32/32, 16/16, 8/8, 4/4, 2/2 — no
+            //    16/32 ni 8/16 como antes.
+            const baseCountries = new Set(getRoundParticipants(baseTeam, round.key));
 
             // Referencia: picks del rival o consenso
             let refCountries: Set<string>;
             if (mode === "participante" && rival) {
-              refCountries = new Set((rival.knockoutPicks?.[round.key] || []).map((p) => p.country).filter(Boolean));
+              refCountries = new Set(getRoundParticipants(rival, round.key));
             } else {
               refCountries = new Set((consensusKnockouts[round.key] || []).filter(Boolean));
             }
