@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, ChevronLeft, Check, Save, Sparkles, Trophy, Users } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronLeft, ChevronUp, Check, Save, Sparkles, Trophy, Users, X } from "lucide-react";
 import { Flag, GroupBadge, SectionTitle } from "@/components/ui";
 import { ADMIN_SPECIAL_FIELDS, ALL_TEAMS_SORTED } from "@/lib/admin-results";
 import { GROUPS, type Team } from "@/lib/data";
@@ -24,7 +24,7 @@ import {
 import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
 import { notifyUserTeamsUpdated } from "@/lib/use-scored-participants";
 
-const GROUP_SLOT_LABELS = ["1.º", "2.º", "3.º", "4.º"] as const;
+// (GROUP_SLOT_LABELS eliminado: el nuevo patrón de pills + slots numerados no lo usa)
 
 type BuilderUser = {
   id: string;
@@ -192,15 +192,50 @@ export function MiPorraBuilder({
     });
   };
 
-  const updateGroupPosition = (group: string, positionIndex: number, value: string) => {
+  // ── Tap en una pill: asigna el equipo al SIGUIENTE slot vacío ──
+  // Si el equipo ya está colocado, lo quita (toggle).
+  const assignNextEmptySlot = (group: string, country: string) => {
     setSaveError("");
     setDraft((current) => {
       const nextGroup = [...(current.groupOrderPicks[group] || ["", "", "", ""])];
-      const previousIndex = nextGroup.findIndex((team) => team === value);
-      if (previousIndex >= 0 && previousIndex !== positionIndex) {
-        nextGroup[previousIndex] = "";
+      const existingIndex = nextGroup.findIndex((t) => t === country);
+      if (existingIndex >= 0) {
+        // Toggle: si ya está, lo quitamos
+        nextGroup[existingIndex] = "";
+      } else {
+        // Buscar primer slot vacío
+        const emptyIdx = nextGroup.findIndex((t) => !t);
+        if (emptyIdx >= 0) nextGroup[emptyIdx] = country;
       }
-      nextGroup[positionIndex] = value;
+      return {
+        ...current,
+        groupOrderPicks: { ...current.groupOrderPicks, [group]: nextGroup },
+      };
+    });
+  };
+
+  // ── X en un slot: quita el equipo de ese slot ──
+  const clearGroupSlot = (group: string, positionIndex: number) => {
+    setSaveError("");
+    setDraft((current) => {
+      const nextGroup = [...(current.groupOrderPicks[group] || ["", "", "", ""])];
+      nextGroup[positionIndex] = "";
+      return {
+        ...current,
+        groupOrderPicks: { ...current.groupOrderPicks, [group]: nextGroup },
+      };
+    });
+  };
+
+  // ── Flechas ↑↓: intercambia con el slot adyacente ──
+  const swapGroupPositions = (group: string, fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex > 3) return;
+    setSaveError("");
+    setDraft((current) => {
+      const nextGroup = [...(current.groupOrderPicks[group] || ["", "", "", ""])];
+      const tmp = nextGroup[fromIndex];
+      nextGroup[fromIndex] = nextGroup[toIndex];
+      nextGroup[toIndex] = tmp;
       return {
         ...current,
         groupOrderPicks: { ...current.groupOrderPicks, [group]: nextGroup },
@@ -452,26 +487,159 @@ export function MiPorraBuilder({
                   })}
                 </div>
 
-                <div className="mt-4 admin-position-grid">
-                  {GROUP_SLOT_LABELS.map((label, index) => (
-                    <label key={`${group}-${label}`} className="card admin-field-block">
-                      <span className="admin-slot-label">{label}</span>
-                      <select
-                        className="input-field admin-select"
-                        value={draft.groupOrderPicks[group]?.[index] || ""}
-                        onChange={(event) =>
-                          updateGroupPosition(group, index, event.target.value)
-                        }
-                      >
-                        <option value="">Seleccionar</option>
-                        {GROUPS[group].map((team) => (
-                          <option key={`${group}-${team}`} value={team}>
-                            {team}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
+                {/* ═══ Posiciones del grupo: pills arriba + 4 slots verticales ═══ */}
+                <div className="mt-4">
+                  <p className="admin-field-label mb-2">Orden final del grupo</p>
+
+                  {/* Pills de equipos: tap para asignar al siguiente slot vacío */}
+                  <div className="flex flex-wrap gap-1.5 mb-2.5">
+                    {GROUPS[group].map((country) => {
+                      const placedAt = (draft.groupOrderPicks[group] || []).indexOf(country);
+                      const isPlaced = placedAt >= 0;
+                      return (
+                        <button
+                          key={`${group}-pill-${country}`}
+                          type="button"
+                          onClick={() => assignNextEmptySlot(group, country)}
+                          className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all"
+                          style={{
+                            background: isPlaced ? "rgb(var(--bg-elevated))" : "rgb(var(--bg-3) / 0.92)",
+                            border: isPlaced
+                              ? "1px solid rgb(var(--border-subtle))"
+                              : "1px solid rgb(var(--divider) / 0.16)",
+                            color: isPlaced ? "rgb(var(--text-faint))" : "rgb(var(--text-warm))",
+                            opacity: isPlaced ? 0.5 : 1,
+                          }}
+                          title={isPlaced ? `Quitar de ${placedAt + 1}.º` : "Asignar al siguiente puesto"}
+                        >
+                          <Flag country={country} size="sm" />
+                          <span>{country}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* 4 slots numerados verticales */}
+                  <div className="rounded-2xl border overflow-hidden"
+                    style={{ borderColor: "rgb(var(--divider) / 0.14)", background: "rgb(var(--bg-3) / 0.5)" }}>
+                    {[0, 1, 2, 3].map((idx) => {
+                      const team = (draft.groupOrderPicks[group] || [])[idx] || "";
+
+                      // Accent por posición:
+                      //  0,1 → verde (clasifica)
+                      //  2   → ámbar (mejor tercero potencial)
+                      //  3   → gris (eliminado)
+                      let accent = "rgb(var(--success))";
+                      let bg = "rgba(var(--success), 0.06)";
+                      if (idx === 2) {
+                        accent = "rgb(var(--amber))";
+                        bg = "rgba(var(--amber), 0.06)";
+                      } else if (idx === 3) {
+                        accent = "rgb(var(--text-faint))";
+                        bg = "transparent";
+                      }
+
+                      // Separador: línea sólida entre 1 y 2; discontinua antes de 3 y 4
+                      const topBorderStyle =
+                        idx === 0
+                          ? "none"
+                          : idx === 1
+                          ? "1px solid rgb(var(--divider) / 0.10)"
+                          : "1px dashed rgb(var(--divider) / 0.20)";
+
+                      return (
+                        <div
+                          key={`${group}-slot-${idx}`}
+                          className="flex items-center gap-3 px-3 py-2.5 relative"
+                          style={{ background: team ? bg : "transparent", borderTop: topBorderStyle }}
+                        >
+                          {/* Accent vertical a la izquierda */}
+                          <span
+                            aria-hidden
+                            className="absolute left-0 top-0 bottom-0 w-[3px]"
+                            style={{ background: team ? accent : "transparent" }}
+                          />
+
+                          {/* Número */}
+                          <span
+                            className="font-display text-base font-extrabold tabular-nums w-5 text-center"
+                            style={{ color: team ? accent : "rgb(var(--text-faint))" }}
+                          >
+                            {idx + 1}
+                          </span>
+
+                          {/* Equipo o placeholder */}
+                          {team ? (
+                            <div className="flex-1 flex items-center gap-2 min-w-0">
+                              <Flag country={team} size="sm" />
+                              <span
+                                className="text-sm font-semibold truncate"
+                                style={{ color: idx === 3 ? "rgb(var(--text-muted))" : "rgb(var(--text-warm))" }}
+                              >
+                                {team}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="flex-1 text-[12px] text-text-faint italic">—</span>
+                          )}
+
+                          {/* Controles: ↑ ↓ X (sólo si hay equipo) */}
+                          {team ? (
+                            <div className="flex items-center gap-0.5 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => swapGroupPositions(group, idx, idx - 1)}
+                                disabled={idx === 0}
+                                className="p-1 rounded-md transition-colors disabled:opacity-30"
+                                style={{ color: "rgb(var(--text-muted))", background: "transparent" }}
+                                title="Subir"
+                                aria-label="Subir posición"
+                              >
+                                <ChevronUp size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => swapGroupPositions(group, idx, idx + 1)}
+                                disabled={idx === 3}
+                                className="p-1 rounded-md transition-colors disabled:opacity-30"
+                                style={{ color: "rgb(var(--text-muted))", background: "transparent" }}
+                                title="Bajar"
+                                aria-label="Bajar posición"
+                              >
+                                <ChevronDown size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => clearGroupSlot(group, idx)}
+                                className="p-1 rounded-md transition-colors ml-0.5"
+                                style={{ color: "rgb(var(--text-muted))", background: "transparent" }}
+                                title="Quitar"
+                                aria-label="Quitar equipo"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Leyenda compacta */}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-text-faint">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: "rgb(var(--success))" }} />
+                      Clasifican (1.º · 2.º)
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: "rgb(var(--amber))" }} />
+                      Mejor 3.º potencial
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: "rgb(var(--text-faint))" }} />
+                      Eliminado
+                    </span>
+                  </div>
                 </div>
               </article>
             );
