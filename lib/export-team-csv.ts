@@ -1,237 +1,252 @@
-import { FIXTURES, type Fixture, type Team } from "@/lib/data";
+import { GROUPS, type Team } from "@/lib/data";
+import { FIXTURES } from "@/lib/data";
+import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
+import { normalizeCountryKey } from "@/lib/flags";
 import type { AdminResults } from "@/lib/admin-results";
 import {
   CSV_TEMPLATE_HEADERS,
   GROUP_KEYS_AL,
   GROUP_MATCH_SCHEMA,
-  type GroupMatchSchemaEntry,
 } from "@/lib/csv-template";
-import { normalizeCountryKey } from "@/lib/flags";
-import { ROUND32_MATCH_DEFS } from "@/lib/porra-builder";
 
-const CSV_SEPARATOR = ";";
+// ════════════════════════════════════════════════════════════════════════════
+// Exportación CSV con el esquema de 269 columnas.
+//
+// Genera 2 líneas: header (fijo) + valores de la porra activa, separados por
+// coma. Solo usa team.* — no usa adminResults ni cálculos de puntos.
+// ════════════════════════════════════════════════════════════════════════════
 
-type CsvCellValue = string | number | null | undefined;
-type FixtureResolution = { fixture: Fixture; swapped: boolean };
-
-function buildMatchKey(homeTeam: string, awayTeam: string) {
-  return `${normalizeCountryKey(homeTeam)}|${normalizeCountryKey(awayTeam)}`;
+// ── CSV escape: si la celda contiene coma, comillas o salto de línea,
+//    envolverla en " y duplicar comillas internas ──
+function escapeCsvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  if (s === "") return "";
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
 }
 
-function buildFixtureLookup() {
-  const lookup = new Map<string, FixtureResolution>();
+// ── Lookup de fixtures por par de equipos normalizado, en ambos sentidos ──
+type FixtureLookupEntry = {
+  fixture: (typeof FIXTURES)[number];
+  /** true si el par del schema está invertido respecto al fixture interno */
+  swapped: boolean;
+};
 
-  FIXTURES.filter((fixture) => fixture.stage === "groups").forEach((fixture) => {
-    lookup.set(buildMatchKey(fixture.homeTeam, fixture.awayTeam), { fixture, swapped: false });
-    lookup.set(buildMatchKey(fixture.awayTeam, fixture.homeTeam), { fixture, swapped: true });
-  });
-
-  return lookup;
+function buildKey(home: string, away: string): string {
+  return `${normalizeCountryKey(home)}|${normalizeCountryKey(away)}`;
 }
 
-const FIXTURE_BY_OFFICIAL_PAIR = buildFixtureLookup();
-
-function getMatchCode(match: GroupMatchSchemaEntry) {
-  return `${match.homeAbbrev}-${match.awayAbbrev}`;
+function buildFixtureLookup(): Map<string, FixtureLookupEntry> {
+  const map = new Map<string, FixtureLookupEntry>();
+  for (const fixture of FIXTURES) {
+    if (fixture.stage !== "groups") continue;
+    const direct = buildKey(fixture.homeTeam, fixture.awayTeam);
+    const inverse = buildKey(fixture.awayTeam, fixture.homeTeam);
+    // Primero registramos la dirección directa
+    if (!map.has(direct)) map.set(direct, { fixture, swapped: false });
+    // Después la inversa, solo si no existe ya
+    if (!map.has(inverse)) map.set(inverse, { fixture, swapped: true });
+  }
+  return map;
 }
 
-function getScoreValue(value: unknown): number | "" {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+// ── Lista de los 72 partidos oficiales en orden canónico ──
+const ORDERED_GROUP_MATCHES = WORLD_CUP_MATCHES
+  .filter((m) => m.stage === "group")
+  .slice()
+  .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  if (typeof value === "string" && value.trim() !== "") {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) return Math.floor(numeric);
+// ── Resolver los goles de un partido oficial desde team.matchPicks ──
+//    El team.matchPicks usa IDs internos de FIXTURES (f1, f2…), no los IDs
+//    1..72 de WORLD_CUP_MATCHES. Por eso buscamos por pareja de equipos.
+function resolveMatchScore(
+  team: Team,
+  officialHome: string,
+  officialAway: string,
+  lookup: Map<string, FixtureLookupEntry>,
+): { home: string; away: string } {
+  const direct = lookup.get(buildKey(officialHome, officialAway));
+  if (direct) {
+    const pick = team.matchPicks?.[direct.fixture.id];
+    if (!pick) return { home: "", away: "" };
+    if (direct.swapped) {
+      // El fixture interno tiene los equipos invertidos respecto al schema
+      const homeGoals = pick.away;
+      const awayGoals = pick.home;
+      return {
+        home: typeof homeGoals === "number" ? String(homeGoals) : "",
+        away: typeof awayGoals === "number" ? String(awayGoals) : "",
+      };
+    }
+    return {
+      home: typeof pick.home === "number" ? String(pick.home) : "",
+      away: typeof pick.away === "number" ? String(pick.away) : "",
+    };
+  }
+  return { home: "", away: "" };
+}
+
+// ── Construir los 269 valores en el mismo orden que CSV_TEMPLATE_HEADERS ──
+function buildRowValues(team: Team): string[] {
+  const lookup = buildFixtureLookup();
+  const values: string[] = [];
+
+  // A) Identificación
+  values.push(escapeCsvCell(team.username || ""));
+  values.push(escapeCsvCell(team.name || ""));
+
+  // B) 144 marcadores (72 partidos × 2)
+  for (const entry of GROUP_MATCH_SCHEMA) {
+    const { home, away } = resolveMatchScore(team, entry.homeTeam, entry.awayTeam, lookup);
+    values.push(escapeCsvCell(home));
+    values.push(escapeCsvCell(away));
   }
 
-  return "";
-}
-
-function resolveOfficialMatchPick(team: Team, match: GroupMatchSchemaEntry, officialMatchNumber: number) {
-  const matchPicks = team.matchPicks || {};
-  const resolution = FIXTURE_BY_OFFICIAL_PAIR.get(buildMatchKey(match.homeTeam, match.awayTeam));
-
-  if (resolution) {
-    const pick = matchPicks[resolution.fixture.id];
-    if (pick) {
-      return {
-        home: getScoreValue(resolution.swapped ? pick.away : pick.home),
-        away: getScoreValue(resolution.swapped ? pick.home : pick.away),
-      };
+  // C) 48 posiciones de grupo (12 × 4)
+  for (const groupKey of GROUP_KEYS_AL) {
+    const picks = team.groupOrderPicks?.[groupKey] || [];
+    for (let i = 0; i < 4; i++) {
+      values.push(escapeCsvCell(picks[i] || ""));
     }
   }
 
-  // Fallback defensivo por si algún dato viniera guardado por ID oficial del calendario.
-  const officialPick = matchPicks[String(officialMatchNumber)] || matchPicks[`m${officialMatchNumber}`];
-  if (officialPick) {
-    return {
-      home: getScoreValue(officialPick.home),
-      away: getScoreValue(officialPick.away),
-    };
+  // D.1) 32 equipos en dieciseisavos — preferimos team.roundOf32Teams si existe;
+  //      si no, reconstruimos desde groupOrderPicks (1.º+2.º de cada grupo + 3.º
+  //      de los grupos elegidos en bestThirdGroups)
+  const round32 = resolveRoundOf32(team);
+  for (let i = 0; i < 32; i++) {
+    values.push(escapeCsvCell(round32[i] || ""));
   }
 
-  return { home: "" as const, away: "" as const };
+  // D.2) 16 octavos = knockoutPicks.dieciseisavos (los 16 que el usuario eligió
+  //      que avanzan FROM dieciseisavos TO octavos)
+  const round16 = (team.knockoutPicks?.dieciseisavos || []).map((p) => p.country);
+  for (let i = 0; i < 16; i++) {
+    values.push(escapeCsvCell(round16[i] || ""));
+  }
+
+  // D.3) 8 cuartos = knockoutPicks.octavos
+  const quarters = (team.knockoutPicks?.octavos || []).map((p) => p.country);
+  for (let i = 0; i < 8; i++) {
+    values.push(escapeCsvCell(quarters[i] || ""));
+  }
+
+  // D.4) 4 semifinales = knockoutPicks.cuartos
+  const semis = (team.knockoutPicks?.cuartos || []).map((p) => p.country);
+  for (let i = 0; i < 4; i++) {
+    values.push(escapeCsvCell(semis[i] || ""));
+  }
+
+  // D.5) 2 finales = knockoutPicks.final si existe; fallback knockoutPicks.semis
+  const finalPicks = team.knockoutPicks?.final && team.knockoutPicks.final.length > 0
+    ? team.knockoutPicks.final.map((p) => p.country)
+    : (team.knockoutPicks?.semis || []).map((p) => p.country);
+  for (let i = 0; i < 2; i++) {
+    values.push(escapeCsvCell(finalPicks[i] || ""));
+  }
+
+  // E) Podio
+  values.push(escapeCsvCell(team.championPick || ""));
+  values.push(escapeCsvCell(team.runnerUpPick || ""));
+  values.push(escapeCsvCell(team.thirdPlacePick || ""));
+
+  // F) 10 especiales
+  const sp = team.specials || ({} as Team["specials"]);
+  values.push(escapeCsvCell(sp.mejorJugador || ""));
+  values.push(escapeCsvCell(sp.mejorJoven || ""));
+  values.push(escapeCsvCell(sp.mejorPortero || ""));
+  values.push(escapeCsvCell(sp.maxGoleador || ""));
+  values.push(escapeCsvCell(sp.maxAsistente || ""));
+  values.push(escapeCsvCell(sp.maxGoleadorEsp || ""));
+  values.push(escapeCsvCell(sp.primerGolEsp || ""));
+  values.push(escapeCsvCell(sp.revelacion || ""));
+  values.push(escapeCsvCell(sp.decepcion || ""));
+  values.push(escapeCsvCell(
+    typeof sp.minutoPrimerGol === "number" ? sp.minutoPrimerGol : "",
+  ));
+
+  return values;
 }
 
-const DOUBLE_MATCH_CODE_BY_FIXTURE_ID = new Map<string, string>();
-GROUP_MATCH_SCHEMA.forEach((match) => {
-  const resolution = FIXTURE_BY_OFFICIAL_PAIR.get(buildMatchKey(match.homeTeam, match.awayTeam));
-  if (resolution) {
-    DOUBLE_MATCH_CODE_BY_FIXTURE_ID.set(resolution.fixture.id, getMatchCode(match));
+// ── Reconstrucción del round32: 1.º+2.º de cada grupo + 3.º de bestThirdGroups ──
+function resolveRoundOf32(team: Team): string[] {
+  // Si el modelo de datos guarda explícitamente roundOf32Teams, usarlo
+  if (Array.isArray(team.roundOf32Teams) && team.roundOf32Teams.length > 0) {
+    return team.roundOf32Teams;
   }
-});
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const group of Object.keys(GROUPS)) {
+    const picks = team.groupOrderPicks?.[group] || [];
+    for (let i = 0; i < 2; i++) {
+      if (picks[i] && !seen.has(picks[i])) {
+        result.push(picks[i]);
+        seen.add(picks[i]);
+      }
+    }
+  }
+  for (const group of (team.bestThirdGroups || [])) {
+    const picks = team.groupOrderPicks?.[group] || [];
+    if (picks[2] && !seen.has(picks[2])) {
+      result.push(picks[2]);
+      seen.add(picks[2]);
+    }
+  }
+  return result;
+}
 
-if (process.env.NODE_ENV !== "production" && typeof window === "undefined") {
-  const missingMatches = GROUP_MATCH_SCHEMA.filter(
-    (match) => !FIXTURE_BY_OFFICIAL_PAIR.has(buildMatchKey(match.homeTeam, match.awayTeam)),
-  );
+// ════════════════════════════════════════════════════════════════════════════
+// API pública — mismas firmas que antes para evitar tocar el botón en mi-club
+// ════════════════════════════════════════════════════════════════════════════
 
-  if (missingMatches.length > 0) {
+/**
+ * Construye el CSV para la porra dada con el esquema de 269 columnas.
+ *
+ * @param team Porra a exportar.
+ * @param _adminResults Mantenido por compatibilidad con la firma previa.
+ *                      No se usa: el nuevo esquema no incluye datos de admin
+ *                      ni cálculos de puntos.
+ * @returns CSV con dos líneas: header + valores.
+ */
+export function buildTeamCsv(team: Team, _adminResults?: AdminResults): string {
+  // Sanity check en dev: el array de headers debe tener 269 elementos
+  if (process.env.NODE_ENV !== "production" && CSV_TEMPLATE_HEADERS.length !== 269) {
     // eslint-disable-next-line no-console
     console.warn(
-      "[export-team-csv] Partidos oficiales sin fixture interno:",
-      missingMatches.map((match) => `${match.homeTeam} vs ${match.awayTeam}`),
+      `[export-team-csv] CSV_TEMPLATE_HEADERS tiene ${CSV_TEMPLATE_HEADERS.length} elementos, se esperaban 269`,
     );
   }
-}
 
-function getStoredDoubleMatchId(team: Team, group: string) {
-  const raw = (team.doubleMatches as Record<string, unknown> | undefined)?.[group];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return String(value ?? "").trim();
-}
+  const headerLine = CSV_TEMPLATE_HEADERS.join(",");
+  const values = buildRowValues(team);
 
-function getDoubleMatchValue(team: Team, group: string) {
-  const stored = getStoredDoubleMatchId(team, group);
-  if (!stored) return "";
-
-  const fixtureCode = DOUBLE_MATCH_CODE_BY_FIXTURE_ID.get(stored);
-  if (fixtureCode) return fixtureCode;
-
-  const numericMatchNumber = Number(stored);
-  if (Number.isInteger(numericMatchNumber) && numericMatchNumber >= 1 && numericMatchNumber <= GROUP_MATCH_SCHEMA.length) {
-    return getMatchCode(GROUP_MATCH_SCHEMA[numericMatchNumber - 1]);
+  // Validación adicional en dev: el número de valores debe coincidir con el de headers
+  if (process.env.NODE_ENV !== "production" && values.length !== CSV_TEMPLATE_HEADERS.length) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[export-team-csv] Mismatch: ${values.length} valores vs ${CSV_TEMPLATE_HEADERS.length} headers`,
+    );
   }
 
-  // Si ya viene como código tipo MEX-SUD, lo mantenemos.
-  if (/^[A-Z]{2,3}-[A-Z]{2,3}$/.test(stored)) return stored;
-
-  return stored;
-}
-
-function getCountryFromKnockoutRound(team: Team, roundKey: string, index: number) {
-  return team.knockoutPicks?.[roundKey]?.[index]?.country || "";
-}
-
-function getGroupTeamAtPosition(team: Team, group: string, position: 1 | 2 | 3 | 4) {
-  return team.groupOrderPicks?.[group]?.[position - 1] || "";
-}
-
-function getRoundOf32Teams(team: Team) {
-  const stored = Array.isArray(team.roundOf32Teams) ? team.roundOf32Teams : [];
-  if (stored.some((country) => String(country ?? "").trim() !== "")) return stored;
-
-  return ROUND32_MATCH_DEFS.flatMap((match) => {
-    const resolveSlot = (slot: (typeof match)["home"] | (typeof match)["away"]) => {
-      if (slot.kind === "group-position") {
-        return getGroupTeamAtPosition(team, slot.group, slot.position);
-      }
-
-      return team.bestThirdAssignments?.[match.matchId] || "";
-    };
-
-    return [resolveSlot(match.home), resolveSlot(match.away)];
-  });
-}
-
-function escapeCsvCell(value: CsvCellValue) {
-  const text = value === null || value === undefined ? "" : String(value);
-
-  if (
-    text.includes('"') ||
-    text.includes(CSV_SEPARATOR) ||
-    text.includes("\n") ||
-    text.includes("\r")
-  ) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-
-  return text;
-}
-
-export function buildTeamCsv(team: Team, _adminResults?: AdminResults) {
-  const row = Object.fromEntries(CSV_TEMPLATE_HEADERS.map((header) => [header, ""])) as Record<string, CsvCellValue>;
-
-  row.username = team.username || "";
-  row.nombreporra = team.name || "";
-
-  GROUP_MATCH_SCHEMA.forEach((match, index) => {
-    const prefix = getMatchCode(match);
-    const pick = resolveOfficialMatchPick(team, match, index + 1);
-
-    row[`${prefix}_${match.homeAbbrev}`] = pick.home;
-    row[`${prefix}_${match.awayAbbrev}`] = pick.away;
-  });
-
-  GROUP_KEYS_AL.forEach((group) => {
-    [1, 2, 3, 4].forEach((position) => {
-      row[`Grupo${group}_${position}`] = getGroupTeamAtPosition(team, group, position as 1 | 2 | 3 | 4);
-    });
-
-    row[`DOBLE_Grupo${group}`] = getDoubleMatchValue(team, group);
-  });
-
-  const roundOf32Teams = getRoundOf32Teams(team);
-  Array.from({ length: 32 }, (_, index) => {
-    row[`EquipoEnDieciseisavos_${index + 1}`] = roundOf32Teams[index] || "";
-  });
-
-  Array.from({ length: 16 }, (_, index) => {
-    row[`EquipoEnOctavos_${index + 1}`] = getCountryFromKnockoutRound(team, "dieciseisavos", index);
-  });
-
-  Array.from({ length: 8 }, (_, index) => {
-    row[`EquipoEnCuartos_${index + 1}`] = getCountryFromKnockoutRound(team, "octavos", index);
-  });
-
-  Array.from({ length: 4 }, (_, index) => {
-    row[`EquipoEnSemifinales_${index + 1}`] = getCountryFromKnockoutRound(team, "cuartos", index);
-  });
-
-  const finalPicks = team.knockoutPicks?.final?.some((pick) => pick.country)
-    ? team.knockoutPicks.final
-    : team.knockoutPicks?.semis || [];
-  Array.from({ length: 2 }, (_, index) => {
-    row[`EquipoEnFinal_${index + 1}`] = finalPicks[index]?.country || "";
-  });
-
-  row.Campeon = team.championPick || "";
-  row.Subcampeon = team.runnerUpPick || "";
-  row.TercerPuesto = team.thirdPlacePick || "";
-
-  row.MejorJugador = team.specials?.mejorJugador || "";
-  row.MejorJugadorJoven = team.specials?.mejorJoven || "";
-  row.MejorPortero = team.specials?.mejorPortero || "";
-  row.MaximoGoleador = team.specials?.maxGoleador || "";
-  row.MaximoAsistente = team.specials?.maxAsistente || "";
-  row.MaxGoleadorESP = team.specials?.maxGoleadorEsp || "";
-  row.PrimerGoleadorESP = team.specials?.primerGolEsp || "";
-  row.SeleccionRevelacion = team.specials?.revelacion || "";
-  row.SeleccionDecepcion = team.specials?.decepcion || "";
-  row.MinutoPrimerGol = team.specials?.minutoPrimerGol ?? "";
-
-  const headerLine = CSV_TEMPLATE_HEADERS.join(CSV_SEPARATOR);
-  const valueLine = CSV_TEMPLATE_HEADERS.map((header) => escapeCsvCell(row[header])).join(CSV_SEPARATOR);
-
+  const valueLine = values.join(",");
   return `${headerLine}\n${valueLine}`;
 }
 
-export function buildTeamCsvFilename(team: Team) {
-  const safe = team.name
-    .normalize("NFD")
+/** Genera un nombre de archivo seguro para la descarga. */
+export function buildTeamCsvFilename(team: Team): string {
+  const safeName = (team.name || "porra")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // quita acentos
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase() || "porra";
+  const safeUser = (team.username || "user")
+    .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9-_]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase();
-
-  return `porra-${safe || "equipo"}.csv`;
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .toLowerCase() || "user";
+  return `${safeUser}_${safeName}.csv`;
 }

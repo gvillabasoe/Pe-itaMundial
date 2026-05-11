@@ -1,12 +1,11 @@
 // ════════════════════════════════════════════════════════════════════════════
-// Nuevo esquema CSV (281 columnas, una sola fila de header + una fila de datos).
+// Nuevo esquema CSV (269 columnas, una sola fila de header + una fila de datos).
 //
 // Estructura:
 //   2  identificación  : username, nombreporra
 //  144 marcadores      : 72 partidos × 2 columnas (goles local oficial,
 //                        goles visitante oficial)
 //   48 posiciones      : 12 grupos × 4 posiciones
-//   12 dobles          : DOBLE_GrupoA..DOBLE_GrupoL
 //   32 dieciseisavos   : EquipoEnDieciseisavos_1..32
 //   16 octavos         : EquipoEnOctavos_1..16
 //    8 cuartos         : EquipoEnCuartos_1..8
@@ -18,7 +17,7 @@
 //                        PrimerGoleadorESP, SeleccionRevelacion,
 //                        SeleccionDecepcion, MinutoPrimerGol
 //   ──────
-//   281 total
+//   269 total
 //
 // El orden de los 72 partidos de fase de grupos coincide con
 // WORLD_CUP_MATCHES.filter(m => m.stage === "group").sort(byOrden).
@@ -116,7 +115,7 @@ export const GROUP_MATCH_SCHEMA: ReadonlyArray<GroupMatchSchemaEntry> = [
   { homeAbbrev: "RDC", awayAbbrev: "UZB", homeTeam: "RD Congo", awayTeam: "Uzbekistán" },
 ];
 
-// ── Construcción programática de los 281 headers ──────────────────────────
+// ── Construcción programática de los 269 headers ──────────────────────────
 
 const matchHeaders: string[] = GROUP_MATCH_SCHEMA.flatMap(({ homeAbbrev, awayAbbrev }) => {
   const prefix = `${homeAbbrev}-${awayAbbrev}`;
@@ -128,8 +127,6 @@ export const GROUP_KEYS_AL = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", 
 const groupPositionHeaders: string[] = GROUP_KEYS_AL.flatMap((g) =>
   [1, 2, 3, 4].map((p) => `Grupo${g}_${p}`),
 );
-
-const doubleMatchHeaders: string[] = GROUP_KEYS_AL.map((g) => `DOBLE_Grupo${g}`);
 
 const round32Headers: string[] = Array.from({ length: 32 }, (_, i) => `EquipoEnDieciseisavos_${i + 1}`);
 const round16Headers: string[] = Array.from({ length: 16 }, (_, i) => `EquipoEnOctavos_${i + 1}`);
@@ -157,7 +154,6 @@ export const CSV_TEMPLATE_HEADERS: readonly string[] = [
   "nombreporra",
   ...matchHeaders,
   ...groupPositionHeaders,
-  ...doubleMatchHeaders,
   ...round32Headers,
   ...round16Headers,
   ...quarterHeaders,
@@ -169,10 +165,10 @@ export const CSV_TEMPLATE_HEADERS: readonly string[] = [
 
 // ── Comprobaciones de sanity en dev (no rompen build) ──
 if (process.env.NODE_ENV !== "production" && typeof window === "undefined") {
-  if (CSV_TEMPLATE_HEADERS.length !== 281) {
+  if (CSV_TEMPLATE_HEADERS.length !== 269) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[csv-template] Se esperaban 281 headers, se obtuvieron ${CSV_TEMPLATE_HEADERS.length}`,
+      `[csv-template] Se esperaban 269 headers, se obtuvieron ${CSV_TEMPLATE_HEADERS.length}`,
     );
   }
   const dupes = CSV_TEMPLATE_HEADERS.filter(
