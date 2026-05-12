@@ -19,24 +19,15 @@ export default function ClasificacionPage() {
   const [search, setSearch] = useState("");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
-  // ── Bloqueado hasta iniciar sesión — mismo patrón que Versus ──
-  if (!user) {
-    return (
-      <div className="flex min-h-[70vh] items-center justify-center px-4">
-        <div className="card max-w-[320px] text-center !p-8 animate-fade-in">
-          <Lock size={36} className="mx-auto mb-3 text-accent-clasificacion" />
-          <h2 className="mb-1 font-display text-xl font-extrabold text-text-warm">Acceso restringido</h2>
-          <p className="mb-4 text-sm text-text-muted">Inicia sesión para ver el ranking</p>
-          <Link href="/mi-club" className="btn no-underline"
-            style={{ background: "rgb(var(--accent-clasificacion))", color: "white" }}>
-            Entrar a Mi Club
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
+  // ────────────────────────────────────────────────────────────────────
+  // ⚠️ TODOS los hooks deben llamarse SIEMPRE en el mismo orden, ANTES
+  // de cualquier `return` condicional. Si no, al recargar la página y
+  // pasar `user` de null → User entre renders, React detecta un número
+  // distinto de hooks y lanza el error "client-side exception".
+  // Los useMemo gestionan internamente el caso `user === null`.
+  // ────────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
+    if (!user) return [];
     let list = [...participants];
     if (filter === "mine") list = list.filter((p) => p.userId === user.id || p.username === user.username);
     else if (filter === "top10") list = participants.slice(0, 10);
@@ -56,6 +47,24 @@ export default function ClasificacionPage() {
     if (!user || !favorites.length) return [];
     return participants.filter((p) => favorites.includes(p.id));
   }, [favorites, participants, user]);
+
+  // ── Bloqueado hasta iniciar sesión — mismo patrón que Versus ──
+  // Este return solo puede ir DESPUÉS de todos los hooks.
+  if (!user) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <div className="card max-w-[320px] text-center !p-8 animate-fade-in">
+          <Lock size={36} className="mx-auto mb-3 text-accent-clasificacion" />
+          <h2 className="mb-1 font-display text-xl font-extrabold text-text-warm">Acceso restringido</h2>
+          <p className="mb-4 text-sm text-text-muted">Inicia sesión para ver el ranking</p>
+          <Link href="/mi-club" className="btn no-underline"
+            style={{ background: "rgb(var(--accent-clasificacion))", color: "white" }}>
+            Entrar a Mi Club
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-5 max-w-[640px] mx-auto">
