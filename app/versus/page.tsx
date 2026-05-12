@@ -154,22 +154,22 @@ export default function VersusPage() {
   const [vsFilter, setVsFilter] = useState("all");
   const [baseTeamIdx, setBaseTeamIdx] = useState(0);
 
-  if (!user) {
-    return (
-      <div className="flex min-h-[70vh] items-center justify-center px-4">
-        <div className="card max-w-[320px] text-center !p-8 animate-fade-in">
-          <Lock size={36} className="mx-auto mb-3 text-accent-versus" />
-          <h2 className="mb-1 font-display text-xl font-extrabold text-text-warm">Acceso restringido</h2>
-          <p className="mb-4 text-sm text-text-muted">Inicia sesión para acceder a Versus</p>
-          <Link href="/mi-club" className="btn no-underline" style={{ background: "#F0417A", color: "white" }}>Entrar a Mi Club</Link>
-        </div>
-      </div>
-    );
-  }
+  // ────────────────────────────────────────────────────────────────────
+  // ⚠️ TODOS los hooks deben llamarse SIEMPRE en el mismo orden y la
+  // misma cantidad en cada render. Por eso TODOS los useMemo van ANTES
+  // del `if (!user) return …`. Cada hook gestiona internamente el caso
+  // `user === null` devolviendo un valor seguro.
+  // ────────────────────────────────────────────────────────────────────
 
-  const userTeams = participants.filter((p) => p.userId === user.id || p.username === user.username);
+  // Variables derivadas (no son hooks, pero con guard de user para no
+  // romper si user es null durante el primer render tras un recargo).
+  const userTeams = user
+    ? participants.filter((p) => p.userId === user.id || p.username === user.username)
+    : [];
   const baseTeam = userTeams[baseTeamIdx] || userTeams[0];
-  const otherTeams = participants.filter((p) => p.userId !== user.id && p.username !== user.username);
+  const otherTeams = user
+    ? participants.filter((p) => p.userId !== user.id && p.username !== user.username)
+    : [];
   const rival = mode === "participante" ? (otherTeams.find((p) => p.id === rivalId) || null) : null;
 
   // ── Consensus computations ──────────────────────────────────────────────
@@ -256,6 +256,21 @@ export default function VersusPage() {
     return specialsComparison;
   }, [specialsComparison, vsFilter]);
 
+  // ── Early return: SOLO después de declarar todos los hooks ─────────────
+  if (!user) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <div className="card max-w-[320px] text-center !p-8 animate-fade-in">
+          <Lock size={36} className="mx-auto mb-3 text-accent-versus" />
+          <h2 className="mb-1 font-display text-xl font-extrabold text-text-warm">Acceso restringido</h2>
+          <p className="mb-4 text-sm text-text-muted">Inicia sesión para acceder a Versus</p>
+          <Link href="/mi-club" className="btn no-underline" style={{ background: "#F0417A", color: "white" }}>Entrar a Mi Club</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Variables NO-hook (puras derivaciones) ─────────────────────────────
   const sections = baseTeam && referenceTeam ? [
     { label: "Fase de grupos", baseValue: baseTeam.groupPoints, referenceValue: referenceTeam.groupPoints },
     { label: "Eliminatorias", baseValue: baseTeam.finalPhasePoints, referenceValue: referenceTeam.finalPhasePoints },
