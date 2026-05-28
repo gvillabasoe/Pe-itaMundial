@@ -336,8 +336,10 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           { label: "Máx. Asistente", val: team.specials.maxAsistente },
           { label: "Mejor Portero", val: team.specials.mejorPortero },
           { label: "Goleador ESP", val: team.specials.maxGoleadorEsp },
+          { label: "Primer Gol ESP", val: team.specials.primerGolEsp },
           { label: "Revelación", val: team.specials.revelacion, isC: true },
           { label: "Decepción", val: team.specials.decepcion, isC: true },
+          { label: "Min. 1.er gol", val: team.specials.minutoPrimerGol ? `${team.specials.minutoPrimerGol}'` : "" },
         ].map((s, i) => (
           <div key={i} className="py-2 px-2.5 rounded-xl"
             style={{ background: "rgb(var(--bg-elevated))", border: "1px solid rgb(var(--border-subtle))" }}>

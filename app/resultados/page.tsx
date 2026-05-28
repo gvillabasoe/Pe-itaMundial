@@ -10,6 +10,8 @@ import { useScoredParticipants } from "@/lib/use-scored-participants";
 import { getCityBgColor, getCityColor, REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
 import { getStatusDisplay, getStatusGroup, isLivePollingStatus } from "@/lib/config/match-status";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
+import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
+import { resolveKnockoutMatchTeams } from "@/lib/worldcup/resolve-knockout";
 import type { AdminResults } from "@/lib/admin-results";
 
 // ════════════════════════════════════════════════════════════
@@ -94,63 +96,12 @@ function getAdminResultOverride(matchId: number, adminResults: AdminResults) {
   };
 }
 
-// ── Resolución de kickoffs (WorldCupMatch no tiene `kickoff` propio) ─
-
-function buildIsoSeries(startDate: string, hoursUtc: number[], count: number): string[] {
-  const start = new Date(`${startDate}T00:00:00Z`);
-  const values: string[] = [];
-  let h = 0;
-  let d = 0;
-  for (let i = 0; i < count; i += 1) {
-    const slot = new Date(start);
-    slot.setUTCDate(start.getUTCDate() + d);
-    slot.setUTCHours(hoursUtc[h], 0, 0, 0);
-    values.push(slot.toISOString());
-    h += 1;
-    if (h >= hoursUtc.length) {
-      h = 0;
-      d += 1;
-    }
-  }
-  return values;
-}
-
-const GROUP_KICKOFF_BY_PAIR = new Map<string, string>();
-FIXTURES.forEach((f) => {
-  if (!f.kickoff) return;
-  const key1 = `${normalizeKey(f.homeTeam)}|${normalizeKey(f.awayTeam)}`;
-  const key2 = `${normalizeKey(f.awayTeam)}|${normalizeKey(f.homeTeam)}`;
-  GROUP_KICKOFF_BY_PAIR.set(key1, f.kickoff);
-  GROUP_KICKOFF_BY_PAIR.set(key2, f.kickoff);
-});
-
-const KNOCKOUT_KICKOFF_FALLBACKS: Record<Exclude<MatchStage, "group">, string[]> = {
-  "round-of-32": buildIsoSeries("2026-06-28", [16, 19], 16),
-  "round-of-16": buildIsoSeries("2026-07-06", [16, 19], 8),
-  "quarter-final": buildIsoSeries("2026-07-11", [16, 19], 4),
-  "semi-final": buildIsoSeries("2026-07-15", [19], 2),
-  "third-place": buildIsoSeries("2026-07-18", [18], 1),
-  final: buildIsoSeries("2026-07-19", [19], 1),
-};
-
-const KNOCKOUT_KICKOFF_BY_ID = new Map<number, string>();
-(Object.keys(KNOCKOUT_KICKOFF_FALLBACKS) as Array<Exclude<MatchStage, "group">>).forEach((stage) => {
-  WORLD_CUP_MATCHES.filter((m) => m.stage === stage).forEach((m, i) => {
-    KNOCKOUT_KICKOFF_BY_ID.set(m.id, KNOCKOUT_KICKOFF_FALLBACKS[stage][i]);
-  });
-});
-
-/**
- * Devuelve el kickoff ISO para un partido del calendario oficial.
- * - Grupos: lookup por par de equipos en FIXTURES (mock con kickoffs reales).
- * - Eliminatorias: lookup por id en serie ISO determinista.
- */
+// ── Resolución de kickoffs ──────────────────────────────────────────────────
+// WorldCupMatch no tiene `kickoff` propio: se toma del calendario oficial de
+// horarios (lib/worldcup/kickoffs), indexado por id de partido. Las horas ya
+// están en UTC y se renderizan en Europe/Madrid (24h) vía Intl.
 function getKickoffForMatch(match: WorldCupMatch): string {
-  if (match.stage === "group") {
-    const key = `${normalizeKey(match.homeTeam)}|${normalizeKey(match.awayTeam)}`;
-    return GROUP_KICKOFF_BY_PAIR.get(key) || "2026-06-11T19:00:00.000Z";
-  }
-  return KNOCKOUT_KICKOFF_BY_ID.get(match.id) || "2026-07-19T19:00:00.000Z";
+  return getKickoffByMatchId(match.id);
 }
 
 /**
@@ -233,14 +184,19 @@ function mergeScheduleWithApi(
     const manual = getAdminResultOverride(m.id, adminResults);
     const effectiveResult = manual || api;
 
+    // Task 5: en fase final, sustituir "1.º Grupo H" etc. por el país real
+    // cuando el admin ya ha cargado posiciones/resultados oficiales. Si aún no
+    // está determinado, se conserva el placeholder original.
+    const { homeTeam, awayTeam } = resolveKnockoutMatchTeams(m, adminResults);
+
     return {
       id: m.id,
       stage: m.stage,
       roundLabel: m.roundLabel,
       hostCity: m.hostCity,
       zone: m.zone,
-      homeTeam: m.homeTeam,
-      awayTeam: m.awayTeam,
+      homeTeam,
+      awayTeam,
       statusShort: effectiveResult?.statusShort || "NS",
       minute: effectiveResult?.minute ?? null,
       // El kickoff se deriva del schedule oficial. WorldCupMatch no tiene
@@ -685,6 +641,9 @@ function MatchOverlay({
   onClose: () => void;
 }) {
   const ref = getGroupFixtureRef(match);
+  // Task 2: el partido inaugural (id 1, México - Sudáfrica) muestra además el
+  // pick especial "Minuto Primer Gol" de cada porra junto al marcador previsto.
+  const isInaugural = match.id === 1;
 
   const rows = useMemo(() => {
     if (!ref) return [];
@@ -788,24 +747,35 @@ function MatchOverlay({
                     </p>
                     <p className="text-[10px] text-text-muted">@{team.username}</p>
                   </div>
-                  {text ? (
-                    <span
-                      className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums"
-                      style={{
-                        background: isDouble
-                          ? "rgb(var(--gold-soft))"
-                          : "rgb(var(--bg-muted))",
-                        color: isDouble
-                          ? "rgb(var(--gold))"
-                          : "rgb(var(--text-secondary))",
-                        border: isDouble ? "1px solid rgba(var(--gold),0.3)" : undefined,
-                      }}
-                    >
-                      {text}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-text-faint">—</span>
-                  )}
+                  <div className="flex flex-col items-end gap-0.5">
+                    {text ? (
+                      <span
+                        className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums"
+                        style={{
+                          background: isDouble
+                            ? "rgb(var(--gold-soft))"
+                            : "rgb(var(--bg-muted))",
+                          color: isDouble
+                            ? "rgb(var(--gold))"
+                            : "rgb(var(--text-secondary))",
+                          border: isDouble ? "1px solid rgba(var(--gold),0.3)" : undefined,
+                        }}
+                      >
+                        {text}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-text-faint">—</span>
+                    )}
+                    {isInaugural && (
+                      <span className="text-[9px] font-semibold text-text-muted tabular-nums whitespace-nowrap">
+                        Min. 1.<sup>er</sup> gol:{" "}
+                        {typeof team.specials?.minutoPrimerGol === "number" &&
+                        team.specials.minutoPrimerGol > 0
+                          ? `${team.specials.minutoPrimerGol}'`
+                          : "—"}
+                      </span>
+                    )}
+                  </div>
                   {pick && <PickChip status={pick.status} points={pick.points} />}
                 </div>
               ))}

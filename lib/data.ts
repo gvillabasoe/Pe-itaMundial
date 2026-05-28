@@ -1,3 +1,5 @@
+import { getGroupKickoffByPair } from "@/lib/worldcup/kickoffs";
+
 // ═══════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════
@@ -227,10 +229,15 @@ function generateGroupFixtures(): Fixture[] {
       const d = new Date(baseDate);
       d.setDate(d.getDate() + (jornada - 1) * 4 + gi);
       d.setHours(mi % 2 === 0 ? 19 : 21, 0, 0, 0);
+      const home = teams[m[0]];
+      const away = teams[m[1]];
+      // Kickoff oficial (hora española → UTC) por par de equipos. Si por lo que
+      // sea no hubiera coincidencia, se conserva la fecha calculada como fallback.
+      const kickoff = getGroupKickoffByPair(home, away) ?? d.toISOString();
       fixtures.push({
         id: `f${fid++}`, stage: "groups", round: `Jornada ${jornada}`, group: g,
-        homeTeam: teams[m[0]], awayTeam: teams[m[1]], status: "NS",
-        kickoff: d.toISOString(), minute: null, score: { home: null, away: null }, goals: [],
+        homeTeam: home, awayTeam: away, status: "NS",
+        kickoff, minute: null, score: { home: null, away: null }, goals: [],
       });
     });
   });
@@ -375,11 +382,17 @@ export function compareSpecials(base: Team, ref: Team | null, consensusSpecials:
     { key: "primerGolEsp", label: "Primer Gol ESP", isCountry: false },
     { key: "revelacion", label: "Revelación", isCountry: true },
     { key: "decepcion", label: "Decepción", isCountry: true },
+    { key: "minutoPrimerGol", label: "Min. 1.er gol", isCountry: false },
   ];
   return fields.map(f => {
-    const baseVal = String(base.specials[f.key]);
-    const refVal = ref ? String(ref.specials[f.key]) : (consensusSpecials[f.key] || "");
-    return { ...f, baseVal, refVal, same: baseVal === refVal };
+    const baseRaw = String(base.specials[f.key]);
+    const refRaw = ref ? String(ref.specials[f.key]) : (consensusSpecials[f.key] || "");
+    // La igualdad se calcula sobre los valores crudos; el apóstrofo es solo
+    // para visualización del minuto del primer gol.
+    const same = baseRaw === refRaw;
+    const isMinute = f.key === "minutoPrimerGol";
+    const fmt = (v: string) => (isMinute && v && v !== "0" ? `${v}'` : v);
+    return { ...f, baseVal: fmt(baseRaw), refVal: fmt(refRaw), same };
   });
 }
 
