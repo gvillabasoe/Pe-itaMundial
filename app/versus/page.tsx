@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Lock } from "lucide-react";
-import { CountryWithFlag, EmptyState, Flag, GroupBadge } from "@/components/ui";
+import { CountryWithFlag, EmptyState, Flag, GroupBadge, PickChip } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
 import {
   FIXTURES,
@@ -15,6 +15,7 @@ import {
   type Team,
 } from "@/lib/data";
 import { KNOCKOUT_ADMIN_COUNTS } from "@/lib/admin-results";
+import { getSpecialsBreakdown, scoreMatchPickAgainstAdmin, type MatchPickPointStatus } from "@/lib/scoring";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
 // ════════════════════════════════════════════════════════════
@@ -145,9 +146,21 @@ function computeConsensusMatchPicks(teams: Team[]): Record<string, { home: numbe
 // PÁGINA
 // ════════════════════════════════════════════════════════════
 
+// Fixtures de grupos agrupados por letra de grupo (orden A→L), para la pestaña
+// "Partidos" del Versus. Cada grupo tiene sus 6 partidos en orden de fixture.
+const FIXTURES_BY_GROUP: Array<{ group: string; fixtures: typeof FIXTURES }> = Object.keys(GROUPS).map(
+  (group) => ({ group, fixtures: FIXTURES.filter((f) => f.group === group) })
+);
+
+/** Formatea un marcador previsto "h - a" o "—" si está incompleto. */
+function formatScorePick(pick: { home: number | null; away: number | null } | null | undefined): string {
+  if (!pick || typeof pick.home !== "number" || typeof pick.away !== "number") return "—";
+  return `${pick.home} - ${pick.away}`;
+}
+
 export default function VersusPage() {
   const { user } = useAuth();
-  const { participants } = useScoredParticipants();
+  const { participants, adminResults } = useScoredParticipants();
   const [mode, setMode] = useState<"general" | "participante">("general");
   const [rivalId, setRivalId] = useState("");
   const [vsTab, setVsTab] = useState("resumen");
@@ -256,6 +269,19 @@ export default function VersusPage() {
     return specialsComparison;
   }, [specialsComparison, vsFilter]);
 
+  // Desglose de puntos por especial (Task 2). El consenso no es una porra real,
+  // así que solo se muestran puntos del rival cuando estamos en modo participante.
+  const baseSpecialPoints = useMemo(() => {
+    const map = new Map<string, { status: "correct" | "wrong" | "pending"; points: number }>();
+    if (baseTeam) getSpecialsBreakdown(baseTeam, adminResults).forEach((s) => map.set(s.key, { status: s.status, points: s.points }));
+    return map;
+  }, [baseTeam, adminResults]);
+  const rivalSpecialPoints = useMemo(() => {
+    const map = new Map<string, { status: "correct" | "wrong" | "pending"; points: number }>();
+    if (mode === "participante" && rival) getSpecialsBreakdown(rival, adminResults).forEach((s) => map.set(s.key, { status: s.status, points: s.points }));
+    return map;
+  }, [mode, rival, adminResults]);
+
   // ── Early return: SOLO después de declarar todos los hooks ─────────────
   if (!user) {
     return (
@@ -283,7 +309,7 @@ export default function VersusPage() {
 
   const accentStyle = (active: boolean) =>
     active ? { background: "rgba(240,65,122,0.15)", color: "#F0417A", borderColor: "#F0417A" } : {};
-  const tabs = ["Resumen", "Grupos", "Eliminatorias", "Especiales"];
+  const tabs = ["Resumen", "Partidos", "Grupos", "Eliminatorias", "Especiales"];
 
   return (
     <div className="mx-auto max-w-[640px] px-4 pt-4">
@@ -411,6 +437,100 @@ export default function VersusPage() {
         </div>
       ) : null}
 
+      {/* ── TAB: PARTIDOS ──
+          Marcadores previstos de fase de grupos con los puntos obtenidos por
+          cada porra en cada partido (verde = exacto, ámbar = signo, rojo =
+          fallo, neutro = sin jugar). Izquierda = tu porra, derecha = rival/consenso.
+      */}
+      {vsTab === "partidos" && baseTeam ? (
+        <div className="flex flex-col gap-2.5 animate-fade-in">
+          <p className="text-[10px] text-text-muted text-center -mt-1">
+            Puntos por partido · <span className="text-success font-semibold">exacto</span> ·{" "}
+            <span className="text-amber font-semibold">signo</span> ·{" "}
+            <span className="text-danger font-semibold">fallo</span> · — sin jugar
+          </p>
+          {FIXTURES_BY_GROUP.map(({ group, fixtures }) => {
+            const rows = fixtures.map((fixture) => {
+              const basePick = baseTeam.matchPicks?.[fixture.id];
+              const refPick = mode === "participante" && rival
+                ? rival.matchPicks?.[fixture.id]
+                : consensusMatchPicks[fixture.id];
+
+              // Estado/puntos: la porra base y el rival ya vienen puntuados; el
+              // consenso se puntúa al vuelo (sin bonus de partido doble).
+              const baseScore = { points: basePick?.points ?? null, status: (basePick?.status ?? "pending") as MatchPickPointStatus };
+              const refScore = mode === "participante" && rival
+                ? { points: (refPick as typeof basePick)?.points ?? null, status: ((refPick as typeof basePick)?.status ?? "pending") as MatchPickPointStatus }
+                : scoreMatchPickAgainstAdmin(fixture.id, refPick as { home: number | null; away: number | null } | undefined, false, adminResults);
+
+              const baseText = formatScorePick(basePick);
+              const refText = formatScorePick(refPick as { home: number | null; away: number | null } | undefined);
+              const same = baseText !== "—" && baseText === refText;
+              if (vsFilter === "diff" && same) return null;
+              if (vsFilter === "same" && !same) return null;
+              return { fixture, baseText, refText, baseScore, refScore, same };
+            }).filter(Boolean) as Array<{
+              fixture: typeof FIXTURES[number];
+              baseText: string; refText: string;
+              baseScore: { points: number | null; status: MatchPickPointStatus };
+              refScore: { points: number | null; status: MatchPickPointStatus };
+              same: boolean;
+            }>;
+
+            if (!rows.length) return null;
+
+            return (
+              <div key={group} className="card !p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <GroupBadge group={group} />
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-2 text-[9px] font-semibold uppercase tracking-wide text-text-muted" style={{ width: "62%" }}>
+                    <span className="text-center text-accent-versus">Tú</span>
+                    <span className="w-4" />
+                    <span className="text-center">{referenceName}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  {rows.map((row) => (
+                    <div key={row.fixture.id}
+                      className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-[rgb(var(--divider)/0.5)] py-2 first:border-0">
+                      {/* Tu porra */}
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="font-display text-xs font-bold tabular-nums text-text-primary">{row.baseText}</span>
+                        <PickChip status={row.baseScore.status} points={row.baseScore.points} />
+                      </div>
+                      {/* Partido */}
+                      <div className="flex flex-col items-center gap-0.5 px-1">
+                        <div className="flex items-center gap-1">
+                          <Flag country={row.fixture.homeTeam} size="sm" />
+                          <span className="text-[9px] text-text-faint">vs</span>
+                          <Flag country={row.fixture.awayTeam} size="sm" />
+                        </div>
+                      </div>
+                      {/* Rival / consenso */}
+                      <div className="flex items-center justify-start gap-1.5">
+                        <PickChip status={row.refScore.status} points={row.refScore.points} />
+                        <span className="font-display text-xs font-bold tabular-nums text-text-secondary">{row.refText}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {FIXTURES_BY_GROUP.every(({ fixtures }) =>
+            fixtures.every((fixture) => {
+              const b = formatScorePick(baseTeam.matchPicks?.[fixture.id]);
+              const rPick = mode === "participante" && rival ? rival.matchPicks?.[fixture.id] : consensusMatchPicks[fixture.id];
+              const r = formatScorePick(rPick as { home: number | null; away: number | null } | undefined);
+              const same = b !== "—" && b === r;
+              return vsFilter === "diff" ? same : vsFilter === "same" ? !same : false;
+            })
+          ) ? (
+            <EmptyState text={vsFilter === "same" ? "No hay coincidencias en partidos" : "No hay diferencias en partidos"} />
+          ) : null}
+        </div>
+      ) : null}
+
       {/* ── TAB: GRUPOS ── */}
       {vsTab === "grupos" && baseTeam ? (
         <div className="flex flex-col gap-1.5 animate-fade-in">
@@ -487,6 +607,14 @@ export default function VersusPage() {
             // Union de todos los equipos relevantes para la comparación
             const allTeams = new Set([...baseCountries, ...refCountries]);
 
+            // Resultado oficial del admin para esta ronda → puntos por acierto.
+            const adminRoundTeams = new Set((adminResults.knockoutRounds[round.key] || []).filter(Boolean));
+            const roundConfigured = adminRoundTeams.size >= adminCount;
+            const statusFor = (inSet: boolean): MatchPickPointStatus => {
+              if (!roundConfigured) return "pending";
+              return inSet ? "correct" : "wrong";
+            };
+
             // Filtrar según vsFilter
             const rows = Array.from(allTeams).map((country) => {
               const inBase = baseCountries.has(country);
@@ -494,8 +622,9 @@ export default function VersusPage() {
               const same = inBase && inRef;
               if (vsFilter === "diff" && same) return null;
               if (vsFilter === "same" && !same) return null;
-              return { country, inBase, inRef, same };
-            }).filter(Boolean) as Array<{ country: string; inBase: boolean; inRef: boolean; same: boolean }>;
+              const hit = adminRoundTeams.has(country);
+              return { country, inBase, inRef, same, hit };
+            }).filter(Boolean) as Array<{ country: string; inBase: boolean; inRef: boolean; same: boolean; hit: boolean }>;
 
             if (!rows.length) return null;
 
@@ -520,7 +649,7 @@ export default function VersusPage() {
                         className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 py-0.5 border-t border-[rgb(var(--divider)/0.06)] first:border-0">
                         <div className="flex items-center justify-center gap-1">
                           {row.inBase
-                            ? <><Flag country={row.country} size="sm" /><span className="truncate text-[11px]">{row.country}</span></>
+                            ? <><Flag country={row.country} size="sm" /><span className="truncate text-[11px]">{row.country}</span><PickChip status={statusFor(true)} points={row.hit ? round.pts : 0} /></>
                             : <span className="text-[11px] text-text-faint">—</span>}
                         </div>
                         <span className={`w-6 text-center text-[11px] font-bold ${row.same ? "text-success" : "text-accent-versus"}`}>
@@ -528,7 +657,7 @@ export default function VersusPage() {
                         </span>
                         <div className="flex items-center justify-center gap-1">
                           {row.inRef
-                            ? <><Flag country={row.country} size="sm" /><span className={`truncate text-[11px] ${!row.same ? "text-accent-versus" : ""}`}>{row.country}</span></>
+                            ? <><Flag country={row.country} size="sm" /><span className={`truncate text-[11px] ${!row.same ? "text-accent-versus" : ""}`}>{row.country}</span>{mode === "participante" ? <PickChip status={statusFor(true)} points={row.hit ? round.pts : 0} /> : null}</>
                             : <span className="text-[11px] text-text-faint">—</span>}
                         </div>
                       </div>
@@ -566,26 +695,32 @@ export default function VersusPage() {
       {/* ── TAB: ESPECIALES ── */}
       {vsTab === "especiales" && baseTeam ? (
         <div className="flex flex-col gap-1 animate-fade-in">
-          {filteredSpecials.map((item) => (
+          {filteredSpecials.map((item) => {
+            const basePts = baseSpecialPoints.get(item.key);
+            const refPts = rivalSpecialPoints.get(item.key);
+            return (
             <div key={item.label} className="card !px-3 !py-2.5">
               <p className="mb-1 text-[10px] uppercase tracking-wide text-text-muted">{item.label}</p>
               <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                <div className="text-center">
+                <div className="flex flex-col items-center gap-1">
                   <p className="text-xs font-semibold text-accent-versus">
-                    {item.isCountry ? <CountryWithFlag country={item.baseVal} /> : item.baseVal}
+                    {item.isCountry ? <CountryWithFlag country={item.baseVal} /> : (item.baseVal || "—")}
                   </p>
+                  {basePts ? <PickChip status={basePts.status} points={basePts.points} /> : null}
                 </div>
                 <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${item.same ? "bg-success/20 text-success" : "bg-accent-versus/20 text-accent-versus"}`}>
                   {item.same ? "=" : "≠"}
                 </div>
-                <div className="text-center">
+                <div className="flex flex-col items-center gap-1">
                   <p className="text-xs font-semibold text-text-muted">
-                    {item.isCountry ? <CountryWithFlag country={item.refVal} /> : item.refVal}
+                    {item.isCountry ? <CountryWithFlag country={item.refVal} /> : (item.refVal || "—")}
                   </p>
+                  {mode === "participante" && refPts ? <PickChip status={refPts.status} points={refPts.points} /> : null}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
           {filteredSpecials.length === 0 ? (
             <EmptyState text={vsFilter === "same" ? "No hay coincidencias en especiales" : "No hay diferencias en especiales"} />
           ) : null}

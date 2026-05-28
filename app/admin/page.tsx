@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, Check, ChevronDown, ChevronUp, Clock3, Edit2, Eye, EyeOff,
+  AlertCircle, ArrowDownUp, BarChart3, Check, ChevronDown, ChevronUp, Clock3, Edit2, Eye, EyeOff,
   LayoutGrid, ListFilter, LogOut, MapPin, Save, Shield, Sparkles, Trash2,
   Trophy, UserPlus, Users,
 } from "lucide-react";
@@ -23,6 +23,7 @@ import {
   type KnockoutRoundKey,
 } from "@/lib/admin-results";
 import { getCityBgColor, getCityColor } from "@/lib/config/regions";
+import { computePorraCompleteness } from "@/lib/porra-completeness";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
 import { notifyAdminResultsUpdated, useScoredParticipants } from "@/lib/use-scored-participants";
 
@@ -32,7 +33,7 @@ const GROUP_SLOT_LABELS: Record<Exclude<GroupPositionValue, 0>, string> = {
 };
 
 type ResultsViewMode = "group" | "phase";
-type AdminTab = "resultados" | "porras" | "usuarios";
+type AdminTab = "resultados" | "porras" | "progreso" | "usuarios";
 
 type GroupStandingRow = {
   team: string; played: number; win: number; draw: number; lose: number;
@@ -314,6 +315,9 @@ export default function AdminPage() {
           <button className={`pill whitespace-nowrap ${activeTab === "porras" ? "active" : ""}`} onClick={() => setActiveTab("porras")}>
             <Users size={14} /> Porras ({participants.length})
           </button>
+          <button className={`pill whitespace-nowrap ${activeTab === "progreso" ? "active" : ""}`} onClick={() => setActiveTab("progreso")}>
+            <BarChart3 size={14} /> Progreso
+          </button>
           <button className={`pill whitespace-nowrap ${activeTab === "usuarios" ? "active" : ""}`} onClick={() => setActiveTab("usuarios")}>
             <UserPlus size={14} /> Usuarios
           </button>
@@ -543,6 +547,9 @@ export default function AdminPage() {
         {activeTab === "porras" && (
           <PorrasManagementSection participants={participants} onEditTeam={setEditingTeam} />
         )}
+
+        {/* ════ TAB: PROGRESO ════ */}
+        {activeTab === "progreso" && <PorrasProgressSection participants={participants} />}
 
         {/* ════ TAB: USUARIOS ════ */}
         {activeTab === "usuarios" && <UsersManagementSection />}
@@ -792,6 +799,119 @@ function PorrasManagementSection({ participants, onEditTeam }: { participants: T
         </div>
       ))}
     </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB: PROGRESO — completitud de cada porra (Task 3)
+// ════════════════════════════════════════════════════════════
+
+type ProgressSort = "progress-asc" | "progress-desc" | "name";
+
+function progressColor(percent: number): string {
+  if (percent >= 100) return "rgb(var(--success))";
+  if (percent >= 67) return "rgb(var(--success))";
+  if (percent >= 34) return "rgb(var(--amber))";
+  return "rgb(var(--danger))";
+}
+
+function ProgressBar({ percent }: { percent: number }) {
+  const color = progressColor(percent);
+  return (
+    <div
+      className="relative h-2.5 w-full overflow-hidden rounded-full"
+      style={{ background: "rgb(var(--bg-muted))" }}
+      role="progressbar"
+      aria-valuenow={percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{ width: `${percent}%`, background: color }}
+      />
+    </div>
+  );
+}
+
+function PorrasProgressSection({ participants }: { participants: Team[] }) {
+  const [sortBy, setSortBy] = useState<ProgressSort>("progress-asc");
+
+  const rows = useMemo(() => {
+    const computed = participants.map((team) => ({ team, c: computePorraCompleteness(team) }));
+    computed.sort((a, b) => {
+      if (sortBy === "name") return a.team.name.localeCompare(b.team.name, "es");
+      if (sortBy === "progress-desc") {
+        if (b.c.percent !== a.c.percent) return b.c.percent - a.c.percent;
+        return a.team.name.localeCompare(b.team.name, "es");
+      }
+      // progress-asc (por defecto): las más incompletas primero
+      if (a.c.percent !== b.c.percent) return a.c.percent - b.c.percent;
+      return a.team.name.localeCompare(b.team.name, "es");
+    });
+    return computed;
+  }, [participants, sortBy]);
+
+  const completas = rows.filter((r) => r.c.percent >= 100).length;
+
+  if (!rows.length) {
+    return <div className="card text-center py-10"><p className="text-text-muted text-sm">No hay porras guardadas.</p></div>;
+  }
+
+  const sortOptions: { key: ProgressSort; label: string }[] = [
+    { key: "progress-asc", label: "Menos completas" },
+    { key: "progress-desc", label: "Más completas" },
+    { key: "name", label: "Nombre" },
+  ];
+
+  return (
+    <section className="animate-fade-in">
+      <SectionTitle accent="#3F9D4E" icon={BarChart3} right={
+        <span className="badge badge-muted text-[10px]">{completas}/{rows.length} completas</span>
+      }>
+        Estado de las porras
+      </SectionTitle>
+
+      <div className="mb-3 flex items-center gap-1.5 overflow-x-auto">
+        <ArrowDownUp size={13} className="text-text-muted flex-shrink-0" />
+        {sortOptions.map((opt) => (
+          <button key={opt.key} type="button"
+            className={`pill whitespace-nowrap ${sortBy === opt.key ? "active" : ""}`}
+            onClick={() => setSortBy(opt.key)}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {rows.map(({ team, c }) => (
+          <div key={team.id} className="card !p-3.5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-text-warm">{team.name}</p>
+                <p className="text-[10px] text-text-muted truncate">@{team.username}</p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {c.percent >= 100 && <Check size={14} className="text-success" />}
+                <span className="font-display text-base font-extrabold tabular-nums" style={{ color: progressColor(c.percent) }}>
+                  {c.percent}%
+                </span>
+              </div>
+            </div>
+            <ProgressBar percent={c.percent} />
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted tabular-nums">
+              <span>{c.partidosDone}/{c.partidosTotal} partidos</span>
+              <span className="text-text-faint">·</span>
+              <span>{c.especialesDone}/{c.especialesTotal} especiales</span>
+              <span className="text-text-faint">·</span>
+              <span className="text-text-faint">
+                {c.groupMatchesDone}/{c.groupMatchesTotal} grupos · {c.knockoutDone}/{c.knockoutTotal} fase final
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

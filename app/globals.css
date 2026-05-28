@@ -16,15 +16,15 @@
   --bg-input: 255 255 255;
 
   --text-primary: 14 19 32;
-  --text-secondary: 60 70 96;
-  --text-muted: 123 135 156;
-  --text-faint: 168 176 191;
+  --text-secondary: 56 66 90;
+  --text-muted: 108 120 142;
+  --text-faint: 156 165 182;
   --text-warm: 26 34 64;
 
-  --border-subtle: 233 229 218;
-  --border-default: 217 210 194;
+  --border-subtle: 230 226 215;
+  --border-default: 213 206 189;
   --border-strong: 184 174 153;
-  --divider: 233 229 218;
+  --divider: 230 226 215;
 
   --gold: 201 150 37;
   --gold-light: 229 179 64;
@@ -140,12 +140,27 @@ body {
   }
   .card:hover {
     border-color: rgb(var(--border-default));
-    box-shadow: 0 4px 12px rgba(var(--shadow-color), 0.06);
+    box-shadow: 0 6px 18px rgba(var(--shadow-color), 0.07);
+    transform: translateY(-1px);
   }
   .card-glow { box-shadow: 0 0 32px rgba(var(--gold), 0.18); }
   .card-elevated {
     background: rgb(var(--bg-elevated));
     box-shadow: 0 12px 32px rgba(var(--shadow-color), 0.10);
+  }
+
+  /* Helper: filas con hover sutil, útil para listados/tablas. */
+  .row-hover {
+    @apply transition-colors duration-150 rounded-lg;
+  }
+  .row-hover:hover { background: rgba(var(--text-muted), 0.06); }
+
+  /* Foco accesible coherente. */
+  .focus-ring:focus-visible,
+  .pill:focus-visible,
+  .input-field:focus-visible {
+    outline: 2px solid rgb(var(--gold));
+    outline-offset: 2px;
   }
 
   .badge {
@@ -167,6 +182,7 @@ body {
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all duration-150 border-none select-none;
     font-family: inherit;
+    min-height: 40px;
   }
   .btn:active { transform: scale(0.98); }
   .btn:focus-visible { outline: 2px solid rgb(var(--gold)); outline-offset: 2px; }
@@ -201,8 +217,10 @@ body {
     background: rgb(var(--bg-surface));
     color: rgb(var(--text-muted));
     font-family: inherit;
+    min-height: 32px;
   }
   .pill:hover { border-color: rgb(var(--border-default)); color: rgb(var(--text-secondary)); }
+  .pill:active { transform: scale(0.97); }
   .pill.active {
     background: rgb(var(--gold-soft));
     color: rgb(var(--gold));

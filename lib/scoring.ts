@@ -1,4 +1,4 @@
-import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, SCORING, type Fixture, type KnockoutPick, type MatchPick, type Team } from "@/lib/data";
+import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, SCORING, type Fixture, type KnockoutPick, type MatchPick, type SpecialPicks, type Team } from "@/lib/data";
 import type { AdminResults, KnockoutRoundKey } from "@/lib/admin-results";
 import { KNOCKOUT_ADMIN_COUNTS } from "@/lib/admin-results";
 import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
@@ -408,4 +408,88 @@ export function scoreParticipants(participants: Team[], adminResults: AdminResul
   });
 
   return scored;
+}
+
+// ════════════════════════════════════════════════════════════
+// HELPERS PÚBLICOS PARA DESGLOSE DE PUNTOS POR PICK (Versus — Task 2)
+//
+// Reutilizan exactamente la misma lógica de puntuación de arriba; son de solo
+// lectura y NO alteran el cálculo de la clasificación.
+// ════════════════════════════════════════════════════════════
+
+export type MatchPickPointStatus = "correct" | "sign" | "wrong" | "pending";
+
+/**
+ * Puntúa un marcador concreto (de cualquier porra o del consenso) contra el
+ * resultado oficial del admin para un fixture de grupos. Devuelve puntos null y
+ * estado "pending" si el partido aún no tiene resultado o el pick está vacío.
+ */
+export function scoreMatchPickAgainstAdmin(
+  fixtureId: string,
+  pick: { home: number | null; away: number | null } | null | undefined,
+  isDouble: boolean,
+  adminResults: AdminResults
+): { points: number | null; status: MatchPickPointStatus } {
+  if (!pick || typeof pick.home !== "number" || typeof pick.away !== "number") {
+    return { points: null, status: "pending" };
+  }
+  const actual = resolveGroupMatchResult(fixtureId, adminResults);
+  if (!actual || typeof actual.home !== "number" || typeof actual.away !== "number") {
+    return { points: null, status: "pending" };
+  }
+  return scoreMatchPick({ home: pick.home, away: pick.away }, actual.home, actual.away, isDouble);
+}
+
+export interface SpecialBreakdownItem {
+  key: keyof SpecialPicks;
+  label: string;
+  isCountry: boolean;
+  value: string;
+  status: "correct" | "wrong" | "pending";
+  points: number;
+  max: number;
+}
+
+const SPECIAL_BREAKDOWN_META: { key: keyof SpecialPicks; label: string; isCountry: boolean; max: number }[] = [
+  { key: "mejorJugador", label: "Mejor Jugador", isCountry: false, max: SCORING.especiales.mejorJugador },
+  { key: "mejorJoven", label: "Mejor Joven", isCountry: false, max: SCORING.especiales.mejorJoven },
+  { key: "maxGoleador", label: "Máx. Goleador", isCountry: false, max: SCORING.especiales.maxGoleador },
+  { key: "maxAsistente", label: "Máx. Asistente", isCountry: false, max: SCORING.especiales.maxAsistente },
+  { key: "mejorPortero", label: "Mejor Portero", isCountry: false, max: SCORING.especiales.mejorPortero },
+  { key: "maxGoleadorEsp", label: "Goleador ESP", isCountry: false, max: SCORING.especiales.maxGoleadorEsp },
+  { key: "primerGolEsp", label: "Primer Gol ESP", isCountry: false, max: SCORING.especiales.primerGolEsp },
+  { key: "revelacion", label: "Revelación", isCountry: true, max: SCORING.especiales.revelacion },
+  { key: "decepcion", label: "Decepción", isCountry: true, max: SCORING.especiales.decepcion },
+  { key: "minutoPrimerGol", label: "Min. 1.er gol", isCountry: false, max: SCORING.especiales.minutoPrimerGol },
+];
+
+/**
+ * Desglose por pick especial de una porra: valor elegido, puntos obtenidos y
+ * estado (correct/wrong/pending) según el resultado oficial del admin.
+ */
+export function getSpecialsBreakdown(team: Team, adminResults: AdminResults): SpecialBreakdownItem[] {
+  const sr = adminResults.specialResults;
+  return SPECIAL_BREAKDOWN_META.map((meta) => {
+    const rawValue = team.specials[meta.key];
+    const value =
+      meta.key === "minutoPrimerGol"
+        ? (typeof rawValue === "number" && rawValue > 0 ? `${rawValue}'` : "")
+        : String(rawValue ?? "");
+
+    const official = sr[meta.key];
+    const officialConfigured =
+      meta.key === "minutoPrimerGol"
+        ? typeof official === "number"
+        : String(official ?? "").trim() !== "";
+
+    let status: "correct" | "wrong" | "pending" = "pending";
+    let points = 0;
+    if (officialConfigured) {
+      const hit = rawValue === official;
+      status = hit ? "correct" : "wrong";
+      points = hit ? meta.max : 0;
+    }
+
+    return { key: meta.key, label: meta.label, isCountry: meta.isCountry, value, status, points, max: meta.max };
+  });
 }
