@@ -87,6 +87,17 @@ Modificados (8):
    atribuirle aciertos). En *Partidos* el consenso sí se puntúa al vuelo
    contra el resultado oficial.
 
+   **Pestaña Dobles (partido doble / doble puntuación).** Nueva pestaña que
+   compara, por grupo, el partido doble elegido por tu porra frente al del
+   rival (modo participante) o al doble más elegido por el resto (modo
+   general). Para cada lado muestra el marcador previsto, el badge ×2 y los
+   puntos obtenidos (con el bonus de partido doble ya aplicado). Además, para
+   cada partido doble indica el **resultado más elegido entre las porras que
+   doblan ese mismo partido** y cuántas lo predicen así (p. ej. "2 - 1
+   (5/9)"). En modo general también muestra cuántas porras doblan ese partido
+   sobre el total. Los filtros "Solo diferencias / Solo coincidencias"
+   funcionan según si tu doble coincide con el de la referencia.
+
 8. **Admin — Barra de progreso por porra.** Nueva pestaña **Progreso**
    en el panel admin junto a "Porras" y "Usuarios". Lista cada porra con
    nombre, barra de progreso (rojo 0-33%, ámbar 34-66%, verde 67-99%, verde

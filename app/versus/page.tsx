@@ -118,6 +118,61 @@ function consensusChampion(teams: Team[]): string {
   return mode(teams.map((t) => t.championPick).filter(Boolean));
 }
 
+// ── Partido doble (doble puntuación) ────────────────────────────────────────
+// Cada porra elige 1 partido doble por grupo (team.doubleMatches[group] = fixtureId).
+
+/** Para cada grupo, el fixtureId de partido doble MÁS elegido entre todas las
+ *  porras, con cuántas porras lo eligieron y cuántas votaron en total. */
+function computeConsensusDoubles(
+  teams: Team[]
+): Record<string, { fixtureId: string; count: number; voters: number }> {
+  const result: Record<string, { fixtureId: string; count: number; voters: number }> = {};
+  for (const group of Object.keys(GROUPS)) {
+    const freq: Record<string, number> = {};
+    let voters = 0;
+    teams.forEach((t) => {
+      const fid = t.doubleMatches?.[group];
+      if (fid) { freq[fid] = (freq[fid] || 0) + 1; voters += 1; }
+    });
+    const top = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+    result[group] = top
+      ? { fixtureId: top[0], count: top[1], voters }
+      : { fixtureId: "", count: 0, voters };
+  }
+  return result;
+}
+
+/** Entre las porras que eligieron `fixtureId` como su partido doble, devuelve
+ *  el marcador más repetido para ese partido y cuántas lo predijeron así. */
+function consensusScoreAmongDoublers(
+  teams: Team[],
+  fixtureId: string
+): { score: { home: number; away: number } | null; count: number; doublers: number } {
+  if (!fixtureId) return { score: null, count: 0, doublers: 0 };
+  const freq: Record<string, number> = {};
+  let doublers = 0;
+  teams.forEach((t) => {
+    // ¿Esta porra marcó este fixture como doble (en cualquier grupo)?
+    const isDoubler = Object.values(t.doubleMatches || {}).includes(fixtureId);
+    if (!isDoubler) return;
+    doublers += 1;
+    const pick = t.matchPicks?.[fixtureId];
+    if (pick && typeof pick.home === "number" && typeof pick.away === "number") {
+      freq[`${pick.home}-${pick.away}`] = (freq[`${pick.home}-${pick.away}`] || 0) + 1;
+    }
+  });
+  const top = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+  if (!top) return { score: null, count: 0, doublers };
+  const [h, a] = top[0].split("-").map(Number);
+  return { score: { home: h, away: a }, count: top[1], doublers };
+}
+
+/** Nombre corto de un fixture de grupos: "México - Sudáfrica" */
+function fixtureLabel(fixtureId: string): string {
+  const f = FIXTURES.find((x) => x.id === fixtureId);
+  return f ? `${f.homeTeam} - ${f.awayTeam}` : "—";
+}
+
 /** Consenso de picks de partidos: marcador más repetido por fixture */
 function computeConsensusMatchPicks(teams: Team[]): Record<string, { home: number | null; away: number | null }> {
   const result: Record<string, { home: number | null; away: number | null }> = {};
@@ -191,6 +246,7 @@ export default function VersusPage() {
   const consensusKnockouts = useMemo(() => computeConsensusKnockouts(participants), [participants]);
   const consensusChamp = useMemo(() => consensusChampion(participants), [participants]);
   const consensusMatchPicks = useMemo(() => computeConsensusMatchPicks(participants), [participants]);
+  const consensusDoubles = useMemo(() => computeConsensusDoubles(participants), [participants]);
 
   // ── Puntos de referencia: media en modo general, equipo rival en participante ──
   const consensusPoints = useMemo(() => {
@@ -309,7 +365,7 @@ export default function VersusPage() {
 
   const accentStyle = (active: boolean) =>
     active ? { background: "rgba(240,65,122,0.15)", color: "#F0417A", borderColor: "#F0417A" } : {};
-  const tabs = ["Resumen", "Partidos", "Grupos", "Eliminatorias", "Especiales"];
+  const tabs = ["Resumen", "Partidos", "Dobles", "Grupos", "Eliminatorias", "Especiales"];
 
   return (
     <div className="mx-auto max-w-[640px] px-4 pt-4">
@@ -528,6 +584,120 @@ export default function VersusPage() {
           ) ? (
             <EmptyState text={vsFilter === "same" ? "No hay coincidencias en partidos" : "No hay diferencias en partidos"} />
           ) : null}
+        </div>
+      ) : null}
+
+      {/* ── TAB: DOBLES ──
+          Partido doble (doble puntuación) elegido por cada porra en cada grupo.
+          Compara tu doble con el del rival/consenso y muestra, dentro de los que
+          eligieron ese mismo partido como doble, el marcador más repetido.
+      */}
+      {vsTab === "dobles" && baseTeam ? (
+        <div className="flex flex-col gap-2.5 animate-fade-in">
+          <p className="-mt-1 text-center text-[10px] text-text-muted">
+            Cada porra marca 1 partido doble por grupo. Comparativa: tu doble vs{" "}
+            {mode === "participante" ? "el del rival" : "el más elegido (consenso)"}.
+          </p>
+          {Object.keys(GROUPS).map((group) => {
+            const baseDoubleId = baseTeam.doubleMatches?.[group] || "";
+            // Referencia: doble del rival, o el doble más elegido (consenso) del grupo.
+            const refDoubleId = mode === "participante" && rival
+              ? (rival.doubleMatches?.[group] || "")
+              : (consensusDoubles[group]?.fixtureId || "");
+
+            const same = Boolean(baseDoubleId && refDoubleId && baseDoubleId === refDoubleId);
+            if (vsFilter === "diff" && same) return null;
+            if (vsFilter === "same" && !same) return null;
+
+            const consInfo = consensusDoubles[group];
+
+            // Marcador más elegido entre quienes doblan TU partido y, si difiere,
+            // entre quienes doblan el de la referencia.
+            const baseDoubleScore = consensusScoreAmongDoublers(participants, baseDoubleId);
+            const refDoubleScore = consensusScoreAmongDoublers(participants, refDoubleId);
+
+            // Puntos de tu pick en tu partido doble (ya calculados, con bonus doble).
+            const basePick = baseDoubleId ? baseTeam.matchPicks?.[baseDoubleId] : null;
+            const baseStatus = (basePick?.status ?? "pending") as MatchPickPointStatus;
+
+            return (
+              <div key={group} className="card !p-3.5">
+                <div className="mb-2.5 flex items-center justify-between">
+                  <GroupBadge group={group} />
+                  <span className={`text-[10px] font-bold ${same ? "text-success" : "text-accent-versus"}`}>
+                    {same ? "Mismo doble" : "Doble distinto"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Tu doble */}
+                  <div className="rounded-xl p-2.5" style={{ background: "rgba(240,65,122,0.06)", border: "1px solid rgba(240,65,122,0.15)" }}>
+                    <p className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-accent-versus">Tu doble</p>
+                    {baseDoubleId ? (
+                      <>
+                        <p className="text-[11px] font-semibold text-text-warm leading-tight">{fixtureLabel(baseDoubleId)}</p>
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span className="font-display text-sm font-extrabold tabular-nums">{formatScorePick(basePick)}</span>
+                          <span className="badge badge-gold !px-1.5 !py-0 text-[9px]">×2</span>
+                          <PickChip status={baseStatus} points={basePick?.points ?? null} />
+                        </div>
+                      </>
+                    ) : <p className="text-[11px] text-text-muted">—</p>}
+                  </div>
+
+                  {/* Doble de referencia */}
+                  <div className="rounded-xl p-2.5" style={{ background: "rgb(var(--bg-muted))", border: "1px solid rgb(var(--border-subtle))" }}>
+                    <p className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-text-muted">
+                      {mode === "participante" ? `Doble de ${referenceName}` : "Doble más elegido"}
+                    </p>
+                    {refDoubleId ? (
+                      <>
+                        <p className="text-[11px] font-semibold text-text-warm leading-tight">{fixtureLabel(refDoubleId)}</p>
+                        {mode === "general" && consInfo && consInfo.voters > 0 ? (
+                          <p className="mt-1 text-[9px] text-text-muted tabular-nums">
+                            {consInfo.count}/{consInfo.voters} porras lo doblan
+                          </p>
+                        ) : null}
+                        {mode === "participante" && rival ? (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <span className="font-display text-sm font-extrabold tabular-nums text-text-secondary">
+                              {formatScorePick(rival.matchPicks?.[refDoubleId])}
+                            </span>
+                            <span className="badge badge-gold !px-1.5 !py-0 text-[9px]">×2</span>
+                            <PickChip status={(rival.matchPicks?.[refDoubleId]?.status ?? "pending") as MatchPickPointStatus} points={rival.matchPicks?.[refDoubleId]?.points ?? null} />
+                          </div>
+                        ) : null}
+                      </>
+                    ) : <p className="text-[11px] text-text-muted">—</p>}
+                  </div>
+                </div>
+
+                {/* Resultado más elegido dentro de cada doble */}
+                <div className="mt-2.5 flex flex-col gap-1 border-t border-[rgb(var(--divider)/0.5)] pt-2.5">
+                  {baseDoubleId && baseDoubleScore.score ? (
+                    <p className="text-[10px] text-text-muted">
+                      <span className="font-semibold text-text-secondary">{fixtureLabel(baseDoubleId)}:</span>{" "}
+                      resultado más elegido entre quienes lo doblan ·{" "}
+                      <span className="font-display font-bold text-text-primary tabular-nums">
+                        {baseDoubleScore.score.home} - {baseDoubleScore.score.away}
+                      </span>{" "}
+                      <span className="text-text-faint tabular-nums">({baseDoubleScore.count}/{baseDoubleScore.doublers})</span>
+                    </p>
+                  ) : null}
+                  {refDoubleId && refDoubleId !== baseDoubleId && refDoubleScore.score ? (
+                    <p className="text-[10px] text-text-muted">
+                      <span className="font-semibold text-text-secondary">{fixtureLabel(refDoubleId)}:</span>{" "}
+                      resultado más elegido entre quienes lo doblan ·{" "}
+                      <span className="font-display font-bold text-text-primary tabular-nums">
+                        {refDoubleScore.score.home} - {refDoubleScore.score.away}
+                      </span>{" "}
+                      <span className="text-text-faint tabular-nums">({refDoubleScore.count}/{refDoubleScore.doublers})</span>
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
