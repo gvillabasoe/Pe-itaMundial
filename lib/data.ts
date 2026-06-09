@@ -9,6 +9,12 @@ export interface User {
   username: string;
   teams: string[];
   favorites: string[];
+  displayName?: string;
+  role?: "user" | "admin";
+  /** Etiqueta opcional asignada por el admin (texto libre). */
+  label?: string | null;
+  /** false = usuario dado de baja. */
+  active?: boolean;
 }
 
 export interface MatchPick {
@@ -48,6 +54,8 @@ export interface Team {
   createdAt?: string;
   locked?: boolean;
   source?: "demo" | "user";
+  /** Etiqueta del usuario dueño de la porra (se propaga para los badges). */
+  label?: string | null;
 }
 
 export interface SpecialPicks {

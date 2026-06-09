@@ -62,7 +62,7 @@ function toIsoString(value: Date | string | null | undefined) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function normalizeRow(row: UserTeamRow) {
+function normalizeRow(row: UserTeamRow, label: string | null = null) {
   const entry = row.entry && typeof row.entry === "object" ? row.entry : {};
   return {
     ...entry,
@@ -71,12 +71,32 @@ function normalizeRow(row: UserTeamRow) {
     createdAt: (entry as Partial<Team>).createdAt || toIsoString(row.created_at) || undefined,
     locked: true,
     source: "user" as const,
+    label,
   } satisfies Partial<Team>;
 }
 
-function buildStore(rows: UserTeamRow[]): UserTeamsStore {
+// Devuelve un mapa user_id -> label leyendo la tabla `users`.
+// Tolerante a fallos: si la columna `label` aún no existe (migración 005
+// sin aplicar) o la tabla no está, devuelve un mapa vacío sin romper nada.
+async function getUserLabelsByUserId(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const result = await queryDb<{ id: string; label: string | null }>(
+      "select id, label from users where label is not null"
+    );
+    for (const row of result.rows) {
+      const value = String(row.label ?? "").trim();
+      if (value) map.set(row.id, value);
+    }
+  } catch {
+    // columna/tabla inexistente: sin etiquetas, sin error.
+  }
+  return map;
+}
+
+function buildStore(rows: UserTeamRow[], labelByUserId?: Map<string, string>): UserTeamsStore {
   const entries = rows
-    .map((row) => sanitizeUserTeam(normalizeRow(row)))
+    .map((row) => sanitizeUserTeam(normalizeRow(row, labelByUserId?.get(row.user_id) ?? null)))
     .filter((entry): entry is Team => Boolean(entry))
     .sort((left, right) => {
       const leftDate = left.createdAt ? new Date(left.createdAt).getTime() : 0;
@@ -489,7 +509,8 @@ export async function getUserTeamsStoreFromDb() {
     return readFallbackUserTeamsStore();
   }
 
-  return buildStore(result.rows);
+  const labelByUserId = await getUserLabelsByUserId();
+  return buildStore(result.rows, labelByUserId);
 }
 
 async function countOtherTeamsForUser(client: PoolClient, userId: string, teamId: string) {

@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle, ArrowDownUp, BarChart3, Check, ChevronDown, ChevronUp, Clock3, Edit2, Eye, EyeOff,
-  LayoutGrid, ListFilter, LogOut, MapPin, Save, Shield, Sparkles, Trash2,
-  Trophy, UserPlus, Users,
+  KeyRound, LayoutGrid, ListFilter, LogOut, MapPin, RefreshCw, Save, Shield, Sparkles, Tag, Trash2,
+  Trophy, UserCheck, UserPlus, Users, UserX,
 } from "lucide-react";
 import { CountrySelectionPreview, Flag, GroupBadge, SectionTitle } from "@/components/ui";
+import { UserBadge } from "@/components/UserBadge";
 import { MiPorraBuilder } from "@/components/mi-porra-builder";
 import { GROUPS, type Team } from "@/lib/data";
 import {
@@ -593,6 +594,48 @@ function UsersManagementSection() {
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
+  // ── Listado de usuarios ──
+  type AdminUserRow = {
+    id: string;
+    username: string;
+    displayName: string;
+    role: "user" | "admin";
+    label: string | null;
+    active: boolean;
+    createdAt: string;
+  };
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [usersError, setUsersError] = useState("");
+  const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [tempPw, setTempPw] = useState<Record<string, string>>({});
+  const [rowMsg, setRowMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
+
+  const loadUsers = async () => {
+    setLoadingUsers(true);
+    setUsersError("");
+    try {
+      const res = await fetch("/api/admin/users/list", { cache: "no-store" });
+      const payload = await res.json();
+      if (!res.ok) {
+        setUsersError(payload?.error || "No se han podido cargar los usuarios.");
+      } else {
+        const list: AdminUserRow[] = payload.users || [];
+        setUsers(list);
+        setLabelDrafts(Object.fromEntries(list.map((u) => [u.id, u.label || ""])));
+      }
+    } catch {
+      setUsersError("Error de conexión al cargar usuarios.");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadUsers();
+  }, []);
+
   const handleCreate = async () => {
     if (!username.trim() || !password.trim()) {
       setResult({ ok: false, message: "Usuario y contraseña son obligatorios." });
@@ -612,11 +655,81 @@ function UsersManagementSection() {
       } else {
         setResult({ ok: true, message: `Usuario @${payload.user.username} creado correctamente.` });
         setUsername(""); setDisplayName(""); setPassword("");
+        void loadUsers();
       }
     } catch {
       setResult({ ok: false, message: "Error de conexión." });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const setRowResult = (id: string, ok: boolean, text: string) =>
+    setRowMsg((prev) => ({ ...prev, [id]: { ok, text } }));
+
+  const saveLabel = async (u: AdminUserRow) => {
+    setBusyId(u.id);
+    try {
+      const res = await fetch("/api/admin/users/set-label", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id, label: labelDrafts[u.id] ?? "" }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        setRowResult(u.id, false, payload?.error || "Error al guardar la etiqueta.");
+      } else {
+        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, label: payload.user.label } : x)));
+        setRowResult(u.id, true, "Etiqueta guardada.");
+      }
+    } catch {
+      setRowResult(u.id, false, "Error de conexión.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleActive = async (u: AdminUserRow) => {
+    setBusyId(u.id);
+    try {
+      const res = await fetch("/api/admin/users/set-active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id, active: !u.active }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        setRowResult(u.id, false, payload?.error || "Error al cambiar el estado.");
+      } else {
+        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, active: payload.user.active } : x)));
+        setRowResult(u.id, true, payload.user.active ? "Usuario reactivado." : "Usuario dado de baja.");
+      }
+    } catch {
+      setRowResult(u.id, false, "Error de conexión.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const resetPassword = async (u: AdminUserRow) => {
+    setBusyId(u.id);
+    try {
+      const res = await fetch("/api/admin/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        setRowResult(u.id, false, payload?.error || "Error al resetear.");
+      } else {
+        setTempPw((prev) => ({ ...prev, [u.id]: payload.tempPassword }));
+        setRowResult(u.id, true, "Contraseña temporal generada (cópiala y compártela).");
+      }
+    } catch {
+      setRowResult(u.id, false, "Error de conexión.");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -691,11 +804,117 @@ function UsersManagementSection() {
         </div>
       </div>
 
+      {/* ── Listado de usuarios ── */}
+      <div className="card">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <Users size={20} className="text-gold" />
+            <h2 className="font-display text-base font-bold text-text-warm">
+              Usuarios {users.length > 0 ? `(${users.length})` : ""}
+            </h2>
+          </div>
+          <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void loadUsers()} disabled={loadingUsers}>
+            <RefreshCw size={14} /> {loadingUsers ? "Cargando..." : "Recargar"}
+          </button>
+        </div>
+
+        <p className="text-[11px] text-text-muted mb-4">
+          El email no se guarda en la base de datos de la app (se recoge en el formulario de inscripción),
+          por eso no aparece aquí. Las contraseñas están cifradas con scrypt y no se pueden mostrar: usa
+          &ldquo;Resetear&rdquo; para generar una temporal.
+        </p>
+
+        {usersError && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl px-3 py-2.5"
+            style={{ background: "rgb(var(--danger-soft))", border: "1px solid rgba(var(--danger),0.3)" }}>
+            <AlertCircle size={14} style={{ color: "rgb(var(--danger))" }} />
+            <p className="text-[12px] font-medium" style={{ color: "rgb(var(--danger))" }}>{usersError}</p>
+          </div>
+        )}
+
+        {!loadingUsers && users.length === 0 && !usersError && (
+          <p className="text-[12px] text-text-muted">No hay usuarios todavía.</p>
+        )}
+
+        <div className="space-y-2.5">
+          {users.map((u) => {
+            const msg = rowMsg[u.id];
+            const temp = tempPw[u.id];
+            const busy = busyId === u.id;
+            return (
+              <div key={u.id} className="rounded-xl border p-3"
+                style={{ borderColor: "rgb(var(--border-subtle))", opacity: u.active ? 1 : 0.7 }}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <UserBadge username={<span className="text-sm font-semibold text-text-warm">@{u.username}</span>} label={u.label} />
+                    <p className="text-[11px] text-text-muted truncate">{u.displayName}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`badge text-[10px] ${u.role === "admin" ? "badge-gold" : "badge-muted"}`}>
+                      {u.role === "admin" ? "Admin" : "Usuario"}
+                    </span>
+                    <span className={`badge text-[10px] ${u.active ? "badge-green" : "badge-red"}`}>
+                      {u.active ? "Activo" : "Baja"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Etiqueta editable */}
+                <div className="mt-2.5 flex items-end gap-2">
+                  <label className="flex-1 min-w-0">
+                    <span className="mb-1 flex items-center gap-1 text-[10px] text-text-muted"><Tag size={11} /> Etiqueta</span>
+                    <input
+                      className="input-field !py-1.5 text-sm"
+                      placeholder="(sin etiqueta)"
+                      maxLength={40}
+                      value={labelDrafts[u.id] ?? ""}
+                      onChange={(e) => setLabelDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                    />
+                  </label>
+                  <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void saveLabel(u)} disabled={busy}>
+                    <Save size={13} /> Guardar
+                  </button>
+                </div>
+
+                {/* Acciones */}
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void resetPassword(u)} disabled={busy}>
+                    <KeyRound size={13} /> Resetear contraseña
+                  </button>
+                  <button
+                    className="btn btn-ghost !px-3 !py-1.5 text-xs"
+                    onClick={() => void toggleActive(u)}
+                    disabled={busy}
+                    style={u.active ? { color: "rgb(var(--danger))" } : { color: "rgb(var(--success))" }}
+                  >
+                    {u.active ? <><UserX size={13} /> Dar de baja</> : <><UserCheck size={13} /> Reactivar</>}
+                  </button>
+                </div>
+
+                {temp && (
+                  <div className="mt-2.5 rounded-lg px-3 py-2 text-[12px]"
+                    style={{ background: "rgb(var(--gold-soft, var(--bg-2)))", border: "1px solid rgba(var(--gold),0.3)" }}>
+                    Contraseña temporal: <code className="font-mono font-semibold text-text-warm">{temp}</code>
+                    <span className="block text-[10px] text-text-muted">Cópiala ahora: no se vuelve a mostrar.</span>
+                  </div>
+                )}
+
+                {msg && (
+                  <p className="mt-2 text-[11px] font-medium"
+                    style={{ color: msg.ok ? "rgb(var(--success))" : "rgb(var(--danger))" }}>
+                    {msg.text}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="card">
         <p className="text-[11px] text-text-muted">
           <strong className="text-text-warm">Nota de seguridad:</strong> Las contraseñas se guardan cifradas con scrypt (N=16384).
-          Nunca se almacenan en claro. Si necesitas cambiar la contraseña de un usuario, crea uno nuevo con el mismo nombre de usuario
-          y el sistema actualizará el hash automáticamente (ON CONFLICT DO UPDATE en Neon).
+          Nunca se almacenan en claro. Un usuario dado de baja no puede iniciar sesión hasta que se reactive.
         </p>
       </div>
     </div>

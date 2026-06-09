@@ -8,6 +8,7 @@ import {
 import { MiPorraBuilder } from "@/components/mi-porra-builder";
 import { EmptyState, Flag, GroupBadge } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
+import { UserBadge } from "@/components/UserBadge";
 import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, type Team } from "@/lib/data";
 import type { AdminResults } from "@/lib/admin-results";
 import { buildTeamCsv, buildTeamCsvFilename } from "@/lib/export-team-csv";
@@ -15,15 +16,27 @@ import { useScoredParticipants, notifyUserTeamsUpdated } from "@/lib/use-scored-
 
 // ── Fecha límite de edición: 10 junio 2026 21:00 CEST = 19:00 UTC ──
 const EDIT_DEADLINE = new Date("2026-06-10T19:00:00.000Z");
+
+// Etiqueta absoluta SIEMPRE en hora de Madrid, válida para cualquier zona
+// horaria del usuario. Resultado: "jueves, 10 de junio, 21:00".
+const DEADLINE_LABEL = new Intl.DateTimeFormat("es-ES", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Europe/Madrid",
+}).format(EDIT_DEADLINE);
+
 function canEditPorra() { return Date.now() < EDIT_DEADLINE.getTime(); }
 function editDeadlineText() {
   const remaining = EDIT_DEADLINE.getTime() - Date.now();
-  if (remaining <= 0) return "Edición cerrada desde el 10 jun a las 21:00";
+  if (remaining <= 0) return "Edición cerrada (10 jun, 21:00)";
   const days = Math.floor(remaining / 86400000);
-  if (days > 1) return `Edición abierta hasta el 10 jun 21:00 (${days} días)`;
   const hours = Math.floor((remaining % 86400000) / 3600000);
-  if (days === 1) return `Edición abierta hasta mañana a las ${21 - (24 - hours)}:00`;
-  return `Edición abierta hasta las 21:00 del 10 jun (${hours}h)`;
+  // La hora límite es SIEMPRE las 21:00: no se calcula, se muestra fija.
+  if (days >= 1) return `Edición abierta hasta el ${DEADLINE_LABEL} (${days} día${days > 1 ? "s" : ""})`;
+  return `Edición abierta hasta hoy a las 21:00 (${hours}h)`;
 }
 
 // ── Progreso de una porra incompleta ──
@@ -294,7 +307,10 @@ function PrivateZone({
             </div>
             <div className="min-w-0">
               <p className="text-[10px] text-text-muted leading-tight">Usuario</p>
-              <p className="text-sm font-semibold truncate">@{user.username}</p>
+              <UserBadge
+                username={<span className="text-sm font-semibold truncate">@{user.username}</span>}
+                label={activeTeam?.label ?? userTeams[0]?.label ?? null}
+              />
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

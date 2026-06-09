@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Lock } from "lucide-react";
 import { CountryWithFlag, EmptyState, Flag, GroupBadge, PickChip } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
+import { UserBadge } from "@/components/UserBadge";
 import {
   FIXTURES,
   GROUPS,
@@ -391,7 +392,7 @@ export default function VersusPage() {
         <div className="card mb-3 flex items-center gap-3 animate-fade-in" style={{ borderLeft: "3px solid #F0417A" }}>
           <div className="flex-1">
             <p className="text-sm font-semibold text-text-warm">{baseTeam.name}</p>
-            <p className="text-[11px] text-text-muted">@{user.username} · #{baseTeam.currentRank}</p>
+            <UserBadge username={<span className="text-[11px] text-text-muted">@{user.username} · #{baseTeam.currentRank}</span>} label={baseTeam.label} />
           </div>
           <span className="font-display text-xl font-extrabold text-accent-versus">{baseTeam.totalPoints}</span>
         </div>

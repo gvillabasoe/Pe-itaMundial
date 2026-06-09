@@ -114,19 +114,37 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await pool.query<{
+    // Intentamos con las columnas nuevas (label, active). Si la migración 005
+    // aún no se ha aplicado, hacemos fallback al SELECT clásico para no romper
+    // el login.
+    type UserRow = {
       id: string;
       username: string;
       password_hash: string;
       display_name: string;
       role: "user" | "admin";
-    }>(
-      `select id, username, password_hash, display_name, role
-       from users
-       where lower(username) = $1
-       limit 1`,
-      [username]
-    );
+      label?: string | null;
+      active?: boolean;
+    };
+
+    let result;
+    try {
+      result = await pool.query<UserRow>(
+        `select id, username, password_hash, display_name, role, label, active
+         from users
+         where lower(username) = $1
+         limit 1`,
+        [username]
+      );
+    } catch {
+      result = await pool.query<UserRow>(
+        `select id, username, password_hash, display_name, role
+         from users
+         where lower(username) = $1
+         limit 1`,
+        [username]
+      );
+    }
 
     const row = result.rows[0];
     const valid = row?.password_hash
@@ -143,6 +161,11 @@ export async function POST(request: Request) {
       return jsonError("Usuario o contraseña incorrectos", 401);
     }
 
+    // Usuario dado de baja: no puede iniciar sesión.
+    if (row.active === false) {
+      return jsonError("Tu cuenta está dada de baja. Contacta con la organización.", 403);
+    }
+
     return NextResponse.json(
       {
         user: {
@@ -150,6 +173,8 @@ export async function POST(request: Request) {
           username: row.username,
           displayName: row.display_name,
           role: row.role,
+          label: row.label ?? null,
+          active: row.active ?? true,
         },
       },
       { headers: { "Cache-Control": "no-store" } }

@@ -179,6 +179,7 @@ export function sanitizeUserTeam(input: Partial<Team> | null | undefined): Team 
     createdAt: current.createdAt ? String(current.createdAt) : undefined,
     locked: current.locked !== false,
     source: "user",
+    label: cleanText(current.label) || null,
   };
 }
 

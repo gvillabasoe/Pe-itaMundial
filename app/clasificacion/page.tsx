@@ -8,6 +8,7 @@ import {
   InitialsAvatar, Medal, PickChip, Skeleton,
 } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
+import { UserBadge } from "@/components/UserBadge";
 import { FIXTURES, GROUPS, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
@@ -173,7 +174,7 @@ function ParticipantRow({ participant, isMine, isFavorite, onToggleFavorite, onO
         <InitialsAvatar name={participant.name} size={36} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-text-primary truncate">{participant.name}</p>
-          <p className="text-[10px] text-text-muted">@{participant.username}</p>
+          <UserBadge username={<span className="text-[10px] text-text-muted">@{participant.username}</span>} label={participant.label} />
         </div>
         <div className="flex items-center gap-2">
           <div className="text-right">
@@ -283,7 +284,7 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
           <InitialsAvatar name={team.name} size={44} />
           <div>
             <h3 className="font-display text-xl font-black tracking-tight text-text-warm">{team.name}</h3>
-            <p className="text-xs text-text-muted mt-0.5">@{team.username}</p>
+            <UserBadge username={<span className="text-xs text-text-muted mt-0.5">@{team.username}</span>} label={team.label} />
           </div>
         </div>
         <button onClick={onClose} className="rounded-xl p-2 cursor-pointer text-text-muted bg-bg-2 border-none" aria-label="Cerrar">

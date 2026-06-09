@@ -31,22 +31,42 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await pool.query<{
+    type MeRow = {
       id: string;
       username: string;
       display_name: string;
       role: "user" | "admin";
-    }>(
-      `select id, username, display_name, role
-       from users
-       where id = $1
-       limit 1`,
-      [id]
-    );
+      label?: string | null;
+      active?: boolean;
+    };
+
+    let result;
+    try {
+      result = await pool.query<MeRow>(
+        `select id, username, display_name, role, label, active
+         from users
+         where id = $1
+         limit 1`,
+        [id]
+      );
+    } catch {
+      result = await pool.query<MeRow>(
+        `select id, username, display_name, role
+         from users
+         where id = $1
+         limit 1`,
+        [id]
+      );
+    }
 
     const row = result.rows[0];
     if (!row) {
       return jsonError("Usuario no encontrado", 404);
+    }
+
+    // Si se ha dado de baja durante la sesión, lo expulsamos al rehidratar.
+    if (row.active === false) {
+      return jsonError("Cuenta dada de baja", 403);
     }
 
     return NextResponse.json(
@@ -56,6 +76,8 @@ export async function GET(request: Request) {
           username: row.username,
           displayName: row.display_name,
           role: row.role,
+          label: row.label ?? null,
+          active: row.active ?? true,
         },
       },
       { headers: { "Cache-Control": "no-store" } }
