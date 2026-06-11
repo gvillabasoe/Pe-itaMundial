@@ -1,12 +1,84 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Activity, BookOpen, ChevronRight, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
 import { Countdown, MatchupWithFlags, SectionTitle } from "@/components/ui";
 import { ACTIVITY, SCORING } from "@/lib/data";
+import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
+
+// ─── Cuenta atrás encadenada ──────────────────────────
+// Secuencia: inauguración → España vs Cabo Verde → España vs Arabia Saudí
+// → Uruguay vs España. Al llegar a cero una, pasa a la siguiente.
+// Equipos y horarios salen del calendario oficial (lib/worldcup).
+const COUNTDOWN_SEQUENCE = [
+  { matchId: 1, homeTeam: "México", awayTeam: "Sudáfrica" },
+  { matchId: 14, homeTeam: "España", awayTeam: "Cabo Verde" },
+  { matchId: 38, homeTeam: "España", awayTeam: "Arabia Saudí" },
+  { matchId: 66, homeTeam: "Uruguay", awayTeam: "España" },
+] as const;
+
+function formatKickoffLabel(kickoffIso: string): string {
+  const date = new Date(kickoffIso);
+  const day = new Intl.DateTimeFormat("es-ES", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Madrid",
+  }).format(date);
+  const time = new Intl.DateTimeFormat("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "Europe/Madrid",
+  }).format(date);
+  return `${day} · ${time} (Madrid)`;
+}
+
+function UpcomingMatchCountdown() {
+  // Se monta primero con el primer partido (HTML estático estable) y tras
+  // hidratar selecciona el que toque según la hora real, re-evaluando cada
+  // segundo para encadenar al siguiente justo cuando la cuenta llega a cero.
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const entries = useMemo(
+    () =>
+      COUNTDOWN_SEQUENCE.map((item) => {
+        const kickoff = getKickoffByMatchId(item.matchId);
+        return { ...item, kickoff, time: new Date(kickoff).getTime() };
+      }),
+    []
+  );
+
+  const current =
+    now === null
+      ? entries[0]
+      : entries.find((entry) => now < entry.time) ?? entries[entries.length - 1];
+
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-center">
+        <MatchupWithFlags
+          homeCountry={current.homeTeam}
+          awayCountry={current.awayTeam}
+          size="md"
+          textClassName="font-display text-[16px] font-bold text-text-warm"
+        />
+      </div>
+      <p className="mb-4 text-center text-[11px] font-medium text-gold">
+        {formatKickoffLabel(current.kickoff)}
+      </p>
+      <Countdown target={current.kickoff} />
+    </>
+  );
+}
 
 const QUICK_LINKS = [
   {
@@ -81,16 +153,7 @@ export default function HomePage() {
           </div>
 
           <div className="rounded-[22px] border border-gold/15 bg-[linear-gradient(135deg,rgba(212,175,55,0.1),rgba(255,255,255,0.03))] p-4 shadow-[0_18px_36px_rgba(var(--shadow-color)/0.18)]">
-            <div className="mb-3 flex items-center justify-center">
-              <MatchupWithFlags
-                homeCountry="México"
-                awayCountry="Sudáfrica"
-                size="md"
-                textClassName="font-display text-[16px] font-bold text-text-warm"
-              />
-            </div>
-            <p className="mb-4 text-center text-[11px] font-medium text-gold">11 junio 2026 · 21:00 (Madrid)</p>
-            <Countdown target="2026-06-11T19:00:00Z" />
+            <UpcomingMatchCountdown />
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap">
