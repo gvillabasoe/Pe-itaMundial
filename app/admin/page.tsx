@@ -27,6 +27,7 @@ import { getCityBgColor, getCityColor } from "@/lib/config/regions";
 import { computePorraCompleteness } from "@/lib/porra-completeness";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
 import { notifyAdminResultsUpdated, useScoredParticipants } from "@/lib/use-scored-participants";
+import { ImportFinishedFromApi } from "@/components/admin/import-finished-button";
 
 const GROUP_SLOT_ORDER: Array<Exclude<GroupPositionValue, 0>> = [1, 2, 3, 4];
 const GROUP_SLOT_LABELS: Record<Exclude<GroupPositionValue, 0>, string> = {
@@ -329,6 +330,7 @@ export default function AdminPage() {
           <>
             <section className="mb-5 animate-fade-in">
               <SectionTitle accent="#C99625" icon={Trophy}>Resultados oficiales</SectionTitle>
+              <ImportFinishedFromApi form={form} onApply={(next) => { touchForm(); setForm(next); }} />
               <div className="card admin-results-toolbar">
                 <div className="admin-results-toolbar-row">
                   <div className="admin-results-toggle">
