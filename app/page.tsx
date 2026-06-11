@@ -1,24 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Activity, BookOpen, ChevronRight, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
 import { Countdown, MatchupWithFlags, SectionTitle } from "@/components/ui";
 import { ACTIVITY, SCORING } from "@/lib/data";
-import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
+import {
+  FINISHED_STATUSES,
+  LIVE_STATUSES,
+  STATUS_LABELS,
+  buildHomeCountdownEntries,
+  findFixtureForEntry,
+  indexFixturesByPair,
+  resolveHomeCardState,
+  type HomeFixture,
+} from "@/lib/home-countdown";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
-// ─── Cuenta atrás encadenada ──────────────────────────
+// ─── Cuenta atrás encadenada con marcador en vivo ─────
 // Secuencia: inauguración → España vs Cabo Verde → España vs Arabia Saudí
-// → Uruguay vs España. Al llegar a cero una, pasa a la siguiente.
-// Equipos y horarios salen del calendario oficial (lib/worldcup).
-const COUNTDOWN_SEQUENCE = [
-  { matchId: 1, homeTeam: "México", awayTeam: "Sudáfrica" },
-  { matchId: 14, homeTeam: "España", awayTeam: "Cabo Verde" },
-  { matchId: 38, homeTeam: "España", awayTeam: "Arabia Saudí" },
-  { matchId: 66, homeTeam: "Uruguay", awayTeam: "España" },
-] as const;
+// → Uruguay vs España. Antes de cada partido, cuenta atrás; durante el
+// partido, marcador en vivo (mismo endpoint que Resultados); 1 hora
+// después de acabar, cuenta atrás del siguiente. Lógica en
+// lib/home-countdown.ts; equipos y horarios del calendario oficial.
 
 function formatKickoffLabel(kickoffIso: string): string {
   const date = new Date(kickoffIso);
@@ -38,29 +43,72 @@ function formatKickoffLabel(kickoffIso: string): string {
 }
 
 function UpcomingMatchCountdown() {
-  // Se monta primero con el primer partido (HTML estático estable) y tras
-  // hidratar selecciona el que toque según la hora real, re-evaluando cada
-  // segundo para encadenar al siguiente justo cuando la cuenta llega a cero.
+  // Se monta con el primer partido (HTML estático estable) y tras hidratar
+  // re-evalúa cada segundo qué toca mostrar.
   const [now, setNow] = useState<number | null>(null);
+  const [fixturesByPair, setFixturesByPair] = useState<Map<string, HomeFixture>>(
+    () => new Map()
+  );
+  const finishedAtRef = useRef<Record<number, number>>({});
+
   useEffect(() => {
     setNow(Date.now());
     const iv = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(iv);
   }, []);
 
-  const entries = useMemo(
-    () =>
-      COUNTDOWN_SEQUENCE.map((item) => {
-        const kickoff = getKickoffByMatchId(item.matchId);
-        return { ...item, kickoff, time: new Date(kickoff).getTime() };
-      }),
-    []
-  );
+  const entries = useMemo(() => buildHomeCountdownEntries(), []);
 
-  const current =
-    now === null
-      ? entries[0]
-      : entries.find((entry) => now < entry.time) ?? entries[entries.length - 1];
+  const state = resolveHomeCardState(
+    entries,
+    now ?? entries[0].time - 1,
+    fixturesByPair,
+    finishedAtRef.current
+  );
+  const { entry: current, mode, fixture } = state;
+
+  // Polling de la API solo mientras la tarjeta está en modo "live"
+  const live = now !== null && mode === "live";
+  useEffect(() => {
+    if (!live) return;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const res = await fetch("/api/results/fixtures", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const map = indexFixturesByPair(data?.fixtures);
+        setFixturesByPair(map);
+        // Registrar el instante en que vemos por primera vez el final de
+        // cada partido de la secuencia (para mantenerlo 1 h en pantalla).
+        for (const e of entries) {
+          const f = findFixtureForEntry(map, e);
+          if (f && FINISHED_STATUSES.has(f.statusShort) && finishedAtRef.current[e.matchId] == null) {
+            finishedAtRef.current[e.matchId] = Date.now();
+          }
+        }
+      } catch {
+        // sin red: la tarjeta mantiene el último estado conocido
+      }
+    };
+
+    void load();
+    const iv = setInterval(() => void load(), 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [live, current.matchId, entries]);
+
+  const isFinished = fixture !== null && FINISHED_STATUSES.has(fixture.statusShort);
+  const isLiveNow = fixture !== null && LIVE_STATUSES.has(fixture.statusShort);
+  const statusLabel = fixture ? STATUS_LABELS[fixture.statusShort] ?? "En juego" : "En juego";
+  const hasScore =
+    fixture !== null &&
+    typeof fixture.score.home === "number" &&
+    typeof fixture.score.away === "number";
 
   return (
     <>
@@ -72,10 +120,45 @@ function UpcomingMatchCountdown() {
           textClassName="font-display text-[16px] font-bold text-text-warm"
         />
       </div>
-      <p className="mb-4 text-center text-[11px] font-medium text-gold">
-        {formatKickoffLabel(current.kickoff)}
-      </p>
-      <Countdown target={current.kickoff} />
+
+      {mode === "countdown" ? (
+        <>
+          <p className="mb-4 text-center text-[11px] font-medium text-gold">
+            {formatKickoffLabel(current.kickoff)}
+          </p>
+          <Countdown target={current.kickoff} />
+        </>
+      ) : (
+        <>
+          <div className="mb-3 flex items-center justify-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest"
+              style={
+                isFinished
+                  ? { background: "rgba(255,255,255,0.06)", color: "rgb(var(--text-muted))" }
+                  : { background: "rgba(220,38,38,0.12)", color: "#ef4444" }
+              }
+            >
+              {!isFinished && (
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+              )}
+              {statusLabel}
+              {isLiveNow && fixture?.minute != null ? ` · ${fixture.minute}'` : ""}
+            </span>
+          </div>
+          <div
+            className="text-center font-display text-[34px] font-black tabular-nums"
+            style={{ color: "rgb(var(--gold))" }}
+          >
+            {hasScore ? `${fixture!.score.home} - ${fixture!.score.away}` : "– : –"}
+          </div>
+          {!hasScore && (
+            <p className="mt-1 text-center text-[10px] text-text-muted">
+              Esperando datos del partido…
+            </p>
+          )}
+        </>
+      )}
     </>
   );
 }
