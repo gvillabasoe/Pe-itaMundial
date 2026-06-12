@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getAdminResultsFromDb, saveAdminResultsToDb } from "@/lib/server/admin-results-db";
 import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
+import { FINISHED_STATUSES, applyApiResultsToAdminResults } from "@/lib/admin-import-fixtures";
+import { getLiveFixturesPayload } from "@/lib/server/live-fixtures";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,9 +19,34 @@ function responseHeaders() {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const adminResults = await getAdminResultsFromDb();
+
+    // ?raw=1 → estado guardado tal cual (lo usa el formulario del Admin,
+    // que debe mostrar solo lo confirmado a mano).
+    const raw = new URL(request.url).searchParams.get("raw") === "1";
+
+    // Switch "Resultados automáticos desde la API" (activo por defecto):
+    // los partidos FINALIZADOS según la API se completan al vuelo, sin
+    // guardarse, y solo en los huecos — lo confirmado a mano siempre gana.
+    // Toda la app (clasificación, resultados, progreso) puntúa con esto.
+    if (!raw && adminResults.autoImportApi) {
+      try {
+        const payload = await getLiveFixturesPayload();
+        if (payload.connection === "live") {
+          const { merged } = applyApiResultsToAdminResults(
+            adminResults,
+            payload.fixtures,
+            FINISHED_STATUSES
+          );
+          return NextResponse.json(merged, { headers: responseHeaders() });
+        }
+      } catch {
+        // Si los proveedores fallan, servimos lo guardado sin romper nada.
+      }
+    }
+
     return NextResponse.json(adminResults, { headers: responseHeaders() });
   } catch (error) {
     return NextResponse.json(

@@ -10,11 +10,38 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { UserBadge } from "@/components/UserBadge";
 import { FIXTURES, GROUPS, type Team } from "@/lib/data";
-import { useScoredParticipants } from "@/lib/use-scored-participants";
+import { useLiveScoredParticipants } from "@/lib/use-scored-participants";
 
 export default function ClasificacionPage() {
   const { user, favorites, toggleFavorite } = useAuth();
-  const { participants, isLoading } = useScoredParticipants();
+  const {
+    participants: officialParticipants,
+    isLoading,
+    liveMatchCount,
+    provisionalParticipants,
+  } = useLiveScoredParticipants();
+  const [liveView, setLiveView] = useState(true);
+
+  // ── Ranking en vivo ──
+  // Mientras hay partidos en juego y la vista "En vivo" está activa, la
+  // tabla muestra la clasificación provisional (marcadores en directo como
+  // si acabaran ahora). Las flechas indican el movimiento respecto a la
+  // clasificación oficial. Al no haber partidos en juego, todo vuelve solo
+  // a la clasificación oficial.
+  const liveAvailable = liveMatchCount > 0 && provisionalParticipants !== null;
+  const showingLive = liveAvailable && liveView;
+  const participants = showingLive ? (provisionalParticipants as Team[]) : officialParticipants;
+
+  const liveDeltaById = useMemo(() => {
+    const deltas = new Map<string, number>();
+    if (!showingLive || !provisionalParticipants) return deltas;
+    const officialRank = new Map(officialParticipants.map((p) => [p.id, p.currentRank]));
+    for (const p of provisionalParticipants) {
+      const before = officialRank.get(p.id);
+      if (typeof before === "number") deltas.set(p.id, before - p.currentRank);
+    }
+    return deltas;
+  }, [showingLive, provisionalParticipants, officialParticipants]);
   const [filter, setFilter] = useState("all");
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [search, setSearch] = useState("");
@@ -73,6 +100,35 @@ export default function ClasificacionPage() {
         <h1 className="page-header__title">Ranking</h1>
       </div>
 
+      {liveAvailable && (
+        <div
+          className="card mb-3 animate-fade-in"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            border: "1px solid rgba(220,38,38,0.25)",
+            background: "rgba(220,38,38,0.05)",
+          }}
+        >
+          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-red-500" style={{ flexShrink: 0 }} />
+          <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+            <p className="text-[12px] font-semibold text-text-warm" style={{ margin: 0 }}>
+              {liveMatchCount === 1 ? "1 partido en juego" : `${liveMatchCount} partidos en juego`}
+            </p>
+            <p className="text-[10px] text-text-muted" style={{ margin: 0 }}>
+              {showingLive
+                ? "Clasificación provisional si los partidos acabaran ahora. Las flechas comparan con la oficial."
+                : "Hay clasificación provisional en vivo disponible."}
+            </p>
+          </div>
+          <button type="button" className={`pill ${showingLive ? "active" : ""}`} onClick={() => setLiveView(!liveView)}>
+            {showingLive ? "Ver oficial" : "Ver en vivo"}
+          </button>
+        </div>
+      )}
+
       <div className="relative mb-3">
         <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" aria-hidden="true" />
         <input className="input-field !pl-9" placeholder="Buscar equipo o jugador..."
@@ -121,6 +177,7 @@ export default function ClasificacionPage() {
         <div className="flex flex-col gap-1">
           {filtered.map((p) => (
             <ParticipantRow key={p.id} participant={p}
+              liveDelta={showingLive ? liveDeltaById.get(p.id) ?? 0 : null}
               isMine={user?.id === p.userId || user?.username === p.username}
               isFavorite={favorites.includes(p.id)}
               onToggleFavorite={() => user && toggleFavorite(p.id)}
@@ -147,8 +204,8 @@ export default function ClasificacionPage() {
   );
 }
 
-function ParticipantRow({ participant, isMine, isFavorite, onToggleFavorite, onOpen, expanded, onToggleExpand }: {
-  participant: Team; isMine: boolean; isFavorite: boolean;
+function ParticipantRow({ participant, liveDelta, isMine, isFavorite, onToggleFavorite, onOpen, expanded, onToggleExpand }: {
+  participant: Team; liveDelta?: number | null; isMine: boolean; isFavorite: boolean;
   onToggleFavorite: () => void; onOpen: () => void;
   expanded: boolean; onToggleExpand: () => void;
 }) {
@@ -169,6 +226,15 @@ function ParticipantRow({ participant, isMine, isFavorite, onToggleFavorite, onO
         <div className="flex items-center gap-1.5 min-w-[36px]">
           {hasMedal ? <Medal rank={rank} /> : (
             <span className="font-display text-sm font-extrabold text-text-faint min-w-[20px] text-center">{rank}</span>
+          )}
+          {typeof liveDelta === "number" && liveDelta !== 0 && (
+            <span
+              className="text-[10px] font-bold tabular-nums"
+              style={{ color: liveDelta > 0 ? "#3E9B4F" : "#DC2626" }}
+              title={liveDelta > 0 ? `Sube ${liveDelta} en vivo` : `Baja ${-liveDelta} en vivo`}
+            >
+              {liveDelta > 0 ? `▲${liveDelta}` : `▼${-liveDelta}`}
+            </span>
           )}
         </div>
         <InitialsAvatar name={participant.name} size={36} />

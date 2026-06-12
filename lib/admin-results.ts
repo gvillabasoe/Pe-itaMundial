@@ -35,6 +35,9 @@ export interface AdminResults {
   version: number;
   configured: boolean;
   savedAt: string | null;
+  /** Switch del Admin: si está activo (por defecto), los partidos finalizados
+   *  se completan y puntúan solos desde la API en /api/admin-results. */
+  autoImportApi: boolean;
   matchResults: Record<string, AdminMatchResult>;
   groupPositions: Record<string, GroupPositionValue>;
   knockoutRounds: Record<KnockoutRoundKey, string[]>;
@@ -140,6 +143,7 @@ export function createDefaultAdminResults(): AdminResults {
     version: ADMIN_RESULTS_VERSION,
     configured: false,
     savedAt: null,
+    autoImportApi: true,
     matchResults: WORLD_CUP_MATCH_IDS.reduce(
       (acc, matchId) => { acc[matchId] = { home: null, away: null, statusShort: "NS" }; return acc; },
       {} as Record<string, AdminMatchResult>
@@ -209,6 +213,7 @@ export function sanitizeAdminResults(value: unknown): AdminResults {
     version: ADMIN_RESULTS_VERSION,
     configured: Boolean(raw.configured),
     savedAt: typeof raw.savedAt === "string" && raw.savedAt ? raw.savedAt : defaults.savedAt,
+    autoImportApi: raw.autoImportApi === undefined ? true : Boolean(raw.autoImportApi),
     matchResults,
     groupPositions,
     knockoutRounds,

@@ -45,7 +45,8 @@ export interface ImportFinishedSummary {
   previous: Record<string, AdminMatchResult>;
 }
 
-const FINISHED_STATUSES = new Set(["FT", "AET", "PEN"]);
+export const FINISHED_STATUSES = new Set(["FT", "AET", "PEN", "AWD", "WO"]);
+export const IN_PLAY_STATUSES = new Set(["1H", "HT", "2H", "ET", "P", "BT", "LIVE", "INT"]);
 
 const STAGE_ORDER: MatchStage[] = [
   "group",
@@ -71,15 +72,15 @@ function pairKey(home: string, away: string): string {
   return `${normalizeKey(home)}|${normalizeKey(away)}`;
 }
 
-function isFinishedWithScore(fixture: ApiFixtureLike): boolean {
+function hasScoreWithStatus(fixture: ApiFixtureLike, statuses: Set<string>): boolean {
   return (
-    FINISHED_STATUSES.has(fixture.statusShort) &&
+    statuses.has(fixture.statusShort) &&
     typeof fixture.score.home === "number" &&
     typeof fixture.score.away === "number"
   );
 }
 
-function sanitizeFixtures(raw: unknown): ApiFixtureLike[] {
+export function sanitizeFixtures(raw: unknown): ApiFixtureLike[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item): ApiFixtureLike | null => {
@@ -107,8 +108,9 @@ function sanitizeFixtures(raw: unknown): ApiFixtureLike[] {
  * (si existe) y devuelve, por matchId, el resultado finalizado a importar
  * ya orientado al orden local/visitante del calendario oficial.
  */
-function buildFinishedResultsByMatchId(
-  fixtures: ApiFixtureLike[]
+export function buildResultsByMatchId(
+  fixtures: ApiFixtureLike[],
+  statuses: Set<string> = FINISHED_STATUSES
 ): Map<string, { home: number; away: number }> {
   const results = new Map<string, { home: number; away: number }>();
 
@@ -152,7 +154,7 @@ function buildFinishedResultsByMatchId(
       stageOffsets.set(match.stage, idx + 1);
     }
 
-    if (!api || !isFinishedWithScore(api)) continue;
+    if (!api || !hasScoreWithStatus(api, statuses)) continue;
 
     const home = flipped ? (api.score.away as number) : (api.score.home as number);
     const away = flipped ? (api.score.home as number) : (api.score.away as number);
@@ -183,7 +185,7 @@ export async function importFinishedResultsFromApi(
     throw new Error(`La API no ha devuelto partidos${reason}`);
   }
 
-  const finishedById = buildFinishedResultsByMatchId(fixtures);
+  const finishedById = buildResultsByMatchId(fixtures, FINISHED_STATUSES);
 
   let imported = 0;
   let skippedConfigured = 0;
@@ -262,5 +264,53 @@ export function revertImportedResults(
     reverted,
     keptEdited,
     next: { ...form, matchResults: nextMatchResults },
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// Merge puro: rellena en un AdminResults los marcadores que la API
+// da con los estados indicados, SIN tocar nada confirmado a mano.
+// Lo usan:
+//   - /api/admin-results (servidor) con FINISHED_STATUSES, cuando el
+//     switch "Resultados automáticos" está activo → la app entera
+//     puntúa sola con los partidos finalizados.
+//   - El ranking en vivo (cliente) con FINISHED ∪ IN_PLAY → la
+//     clasificación provisional mientras hay partidos en juego.
+// ════════════════════════════════════════════════════════════
+export interface ApplyApiResultsOutcome {
+  merged: AdminResults;
+  /** matchIds rellenados desde la API en esta pasada */
+  filled: string[];
+}
+
+export function applyApiResultsToAdminResults(
+  admin: AdminResults,
+  rawFixtures: unknown,
+  statuses: Set<string> = FINISHED_STATUSES
+): ApplyApiResultsOutcome {
+  const fixtures = sanitizeFixtures(rawFixtures);
+  if (fixtures.length === 0) return { merged: admin, filled: [] };
+
+  const byMatchId = buildResultsByMatchId(fixtures, statuses);
+  if (byMatchId.size === 0) return { merged: admin, filled: [] };
+
+  const filled: string[] = [];
+  const nextMatchResults = { ...admin.matchResults };
+
+  byMatchId.forEach((score, matchId) => {
+    if (isConfiguredMatchResult(admin.matchResults[matchId])) return;
+    nextMatchResults[matchId] = { home: score.home, away: score.away, statusShort: "FT" };
+    filled.push(matchId);
+  });
+
+  if (filled.length === 0) return { merged: admin, filled };
+
+  return {
+    merged: {
+      ...admin,
+      configured: true,
+      matchResults: nextMatchResults,
+    },
+    filled,
   };
 }

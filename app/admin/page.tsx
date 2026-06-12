@@ -134,7 +134,7 @@ export default function AdminPage() {
     let mounted = true;
     const load = async () => {
       try {
-        const response = await fetch("/api/admin-results", { cache: "no-store" });
+        const response = await fetch("/api/admin-results?raw=1", { cache: "no-store" });
         const payload = await response.json();
         const sanitized = sanitizeAdminResults(payload);
         if (!mounted) return;
