@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CloudDownload, Loader2, Undo2, Zap } from "lucide-react";
 import type { AdminMatchResult, AdminResults } from "@/lib/admin-results";
 import {
+  extractFirstGoalMinute,
+  extractFirstScorerForTeam,
   importFinishedResultsFromApi,
   revertImportedResults,
 } from "@/lib/admin-import-fixtures";
@@ -44,8 +46,41 @@ export function ImportFinishedFromApi({ form, onApply }: ImportFinishedFromApiPr
   const [importing, setImporting] = useState(false);
   const [lastImport, setLastImport] = useState<LastImport | null>(null);
   const [feedback, setFeedback] = useState<{ tone: FeedbackTone; message: string } | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const autoOn = form.autoImportApi;
+
+  // Sugerencias informativas desde la API (goleadores): minuto del primer
+  // gol del torneo y primer goleador español. Solo lectura — el matching de
+  // nombres de jugador es difuso, así que la decisión final es del admin.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/results/fixtures", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const out: string[] = [];
+        const minute = extractFirstGoalMinute(data?.fixtures);
+        if (minute !== null) out.push(`Minuto del primer gol del torneo: ${minute}'`);
+        const scorer = extractFirstScorerForTeam(data?.fixtures, "España");
+        if (scorer) {
+          out.push(
+            `Primer goleador español según la API: ${scorer.player}` +
+              (typeof scorer.minute === "number" ? ` (${scorer.minute}', ${scorer.matchLabel})` : ` (${scorer.matchLabel})`)
+          );
+        }
+        setSuggestions(out);
+      } catch {
+        // sin sugerencias
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleToggle = async () => {
     const next = !autoOn;
@@ -178,7 +213,7 @@ export function ImportFinishedFromApi({ form, onApply }: ImportFinishedFromApiPr
           </p>
           <p className="text-[11px] text-text-muted" style={{ margin: 0 }}>
             {autoOn
-              ? "Los partidos finalizados se completan y puntúan solos en toda la app. Lo que confirmes a mano tiene prioridad."
+              ? "Marcadores finalizados, posiciones de grupos completos y equipos por ronda se completan y puntúan solos. Lo que confirmes a mano tiene prioridad."
               : "Modo manual: solo puntúa lo que tú guardes. Puedes usar la importación puntual de abajo."}
           </p>
         </div>
@@ -201,6 +236,14 @@ export function ImportFinishedFromApi({ form, onApply }: ImportFinishedFromApiPr
           <p className="text-[11px] text-text-muted" style={{ flex: "1 1 200px", margin: 0 }}>
             Rellena el formulario una vez; revisas y pulsas Guardar. No pisa resultados confirmados.
           </p>
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="text-[11px] text-text-muted" style={{ borderTop: "1px solid rgb(var(--border-default))", paddingTop: 8 }}>
+          {suggestions.map((line) => (
+            <p key={line} style={{ margin: "0 0 2px" }}>💡 {line}</p>
+          ))}
         </div>
       )}
 

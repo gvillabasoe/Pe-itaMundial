@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import useSWR from "swr";
 import { AlertCircle, ChevronDown, ChevronUp, Clock3, MapPin, RefreshCw, Search, Users, Wifi, WifiOff, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { LiveGroupTables } from "@/components/live-group-tables";
 import { EmptyState, Flag, GroupBadge, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
@@ -30,6 +31,15 @@ interface ApiFixtureItem {
   statusShort: string;
   city: string | null;
   score: { home: number | null; away: number | null };
+  goals?: ApiGoalEvent[];
+}
+
+interface ApiGoalEvent {
+  minute: number | null;
+  player: string;
+  side: "home" | "away";
+  ownGoal: boolean;
+  penalty: boolean;
 }
 
 interface ResultsApiPayload {
@@ -56,6 +66,8 @@ interface MatchView {
   group: string | null;
   /** Jornada del grupo (1, 2 o 3) — derivada cronológicamente */
   matchday: 1 | 2 | 3 | null;
+  /** Goleadores según la API (vacío si el proveedor no los da) */
+  goals: ApiGoalEvent[];
 }
 
 // ════════════════════════════════════════════════════════════
@@ -206,6 +218,7 @@ function mergeScheduleWithApi(
       score: effectiveResult?.score || { home: null, away: null },
       group: m.stage === "group" ? getGroupForMatch(m.homeTeam, m.awayTeam) : null,
       matchday: null, // se rellena después en assignMatchdays
+      goals: api?.goals ?? [],
     };
   });
 
@@ -390,6 +403,9 @@ export default function ResultadosPage() {
           </button>
         </div>
       )}
+
+      {/* Tablas de grupo en vivo (criterios FIFA, plegable) */}
+      <LiveGroupTables />
 
       {/* Buscador */}
       <div className="relative mb-3">
@@ -697,6 +713,31 @@ function MatchOverlay({
             <X size={17} />
           </button>
         </div>
+
+        {/* Goleadores según la API */}
+        {match.goals.length > 0 && (
+          <div className="card !py-2.5 !px-3 mb-4">
+            <p className="text-[9px] uppercase tracking-widest text-text-muted mb-1.5" style={{ margin: "0 0 6px" }}>
+              Goles
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["home", "away"] as const).map((side) => (
+                <div key={side} style={{ textAlign: side === "home" ? "left" : "right" }}>
+                  {match.goals
+                    .filter((g) => g.side === side)
+                    .map((g, i) => (
+                      <p key={`${side}-${i}`} className="text-[11px] text-text-primary" style={{ margin: "0 0 2px" }}>
+                        ⚽ {g.player}
+                        {typeof g.minute === "number" ? ` ${g.minute}'` : ""}
+                        {g.penalty ? " (p)" : ""}
+                        {g.ownGoal ? " (pp)" : ""}
+                      </p>
+                    ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-center gap-3 mb-5">
           <div className="flex items-center gap-2 flex-1 justify-end">

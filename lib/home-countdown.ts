@@ -55,12 +55,21 @@ export interface HomeCountdownEntry {
   time: number;
 }
 
+export interface HomeGoal {
+  minute: number | null;
+  player: string;
+  side: "home" | "away";
+  penalty: boolean;
+  ownGoal: boolean;
+}
+
 export interface HomeFixture {
   homeTeam: string;
   awayTeam: string;
   statusShort: string;
   minute: number | null;
   score: { home: number | null; away: number | null };
+  goals: HomeGoal[];
 }
 
 export interface HomeCardState {
@@ -96,6 +105,21 @@ export function indexFixturesByPair(raw: unknown): Map<string, HomeFixture> {
   for (const item of raw) {
     const f = item as Record<string, unknown>;
     const score = (f.score || {}) as Record<string, unknown>;
+    const rawGoals = Array.isArray(f.goals) ? f.goals : [];
+    const goals: HomeGoal[] = rawGoals
+      .map((g) => {
+        const r = g as Record<string, unknown>;
+        const side = r.side === "away" ? "away" : r.side === "home" ? "home" : null;
+        if (!side) return null;
+        return {
+          minute: typeof r.minute === "number" ? r.minute : null,
+          player: String(r.player || "").trim(),
+          side,
+          penalty: r.penalty === true,
+          ownGoal: r.ownGoal === true,
+        } as HomeGoal;
+      })
+      .filter((g): g is HomeGoal => g !== null);
     const fixture: HomeFixture = {
       homeTeam: String(f.homeTeam || ""),
       awayTeam: String(f.awayTeam || ""),
@@ -105,6 +129,7 @@ export function indexFixturesByPair(raw: unknown): Map<string, HomeFixture> {
         home: typeof score.home === "number" ? score.home : null,
         away: typeof score.away === "number" ? score.away : null,
       },
+      goals,
     };
     if (fixture.homeTeam && fixture.awayTeam) {
       map.set(pairKey(fixture.homeTeam, fixture.awayTeam), fixture);
@@ -131,6 +156,7 @@ export function findFixtureForEntry(
       homeTeam: entry.homeTeam,
       awayTeam: entry.awayTeam,
       score: { home: reversed.score.away, away: reversed.score.home },
+      goals: reversed.goals.map((g) => ({ ...g, side: g.side === "home" ? "away" as const : "home" as const })),
     };
   }
   return null;

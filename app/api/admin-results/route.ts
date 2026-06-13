@@ -2,7 +2,13 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getAdminResultsFromDb, saveAdminResultsToDb } from "@/lib/server/admin-results-db";
 import { ADMIN_COOKIE_NAME } from "@/lib/admin-session";
-import { FINISHED_STATUSES, applyApiResultsToAdminResults } from "@/lib/admin-import-fixtures";
+import {
+  FINISHED_STATUSES,
+  applyApiGroupPositionsToAdminResults,
+  applyApiKnockoutsToAdminResults,
+  applyApiResultsToAdminResults,
+  extractFirstGoalMinute,
+} from "@/lib/admin-import-fixtures";
 import { getLiveFixturesPayload } from "@/lib/server/live-fixtures";
 
 export const runtime = "nodejs";
@@ -35,11 +41,30 @@ export async function GET(request: Request) {
       try {
         const payload = await getLiveFixturesPayload();
         if (payload.connection === "live") {
-          const { merged } = applyApiResultsToAdminResults(
+          // 1) Marcadores de partidos FINALIZADOS (lo manual siempre gana)
+          let { merged } = applyApiResultsToAdminResults(
             adminResults,
             payload.fixtures,
             FINISHED_STATUSES
           );
+          // 2) Equipos que alcanzan cada ronda eliminatoria (solo rondas
+          //    que el admin tenga completamente vacías)
+          merged = applyApiKnockoutsToAdminResults(merged, payload.fixtures).merged;
+          // 3) Posiciones finales de grupos completos con desempate FIFA
+          //    decidible (solo grupos sin ninguna posición puesta a mano)
+          merged = applyApiGroupPositionsToAdminResults(merged).merged;
+          // 4) Minuto del primer gol del torneo (premio especial), solo si
+          //    el admin no lo ha fijado y el inaugural ya terminó
+          if (merged.specialResults.minutoPrimerGol === null) {
+            const minute = extractFirstGoalMinute(payload.fixtures);
+            if (minute !== null) {
+              merged = {
+                ...merged,
+                configured: true,
+                specialResults: { ...merged.specialResults, minutoPrimerGol: minute },
+              };
+            }
+          }
           return NextResponse.json(merged, { headers: responseHeaders() });
         }
       } catch {

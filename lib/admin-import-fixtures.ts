@@ -1,4 +1,6 @@
 import { WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
+import { GROUP_MATCH_IDS, decideFinalGroupPositions, type GroupMatchScore } from "@/lib/worldcup/group-tables";
+import { TEAM_SET, KNOCKOUT_ADMIN_COUNTS, type KnockoutRoundKey } from "@/lib/admin-results";
 import { isConfiguredMatchResult, type AdminMatchResult, type AdminResults } from "@/lib/admin-results";
 
 // ════════════════════════════════════════════════════════════
@@ -313,4 +315,190 @@ export function applyApiResultsToAdminResults(
     },
     filled,
   };
+}
+
+// ════════════════════════════════════════════════════════════
+// AUTOCOMPLETADO DE POSICIONES DE GRUPO
+//
+// Para cada grupo cuyos 6 partidos están confirmados (a mano o por la
+// API tras el merge de marcadores) y cuyas posiciones el admin NO ha
+// tocado, calcula la tabla con criterios FIFA (a–f) y rellena las
+// posiciones 1–4. Si el desempate requiere fair play/sorteo, se
+// abstiene y lo deja para el humano.
+// ════════════════════════════════════════════════════════════
+export function applyApiGroupPositionsToAdminResults(
+  admin: AdminResults
+): { merged: AdminResults; filledGroups: string[] } {
+  const filledGroups: string[] = [];
+  let nextPositions: Record<string, import("@/lib/admin-results").GroupPositionValue> | null = null;
+
+  const matchById = new Map(WORLD_CUP_MATCHES.map((m) => [m.id, m]));
+
+  for (const [letter, matchIds] of Object.entries(GROUP_MATCH_IDS)) {
+    const scores: GroupMatchScore[] = [];
+    let complete = true;
+    for (const matchId of matchIds) {
+      const result = admin.matchResults[String(matchId)];
+      const match = matchById.get(matchId);
+      if (!match || !isConfiguredMatchResult(result)) {
+        complete = false;
+        break;
+      }
+      scores.push({
+        matchId,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        home: result!.home as number,
+        away: result!.away as number,
+      });
+    }
+    if (!complete) continue;
+
+    // Solo si el admin no ha puesto NINGUNA posición de este grupo
+    const positions = decideFinalGroupPositions(letter, scores);
+    if (!positions) continue;
+    const groupTeams = [...positions.keys()];
+    const untouched = groupTeams.every((team) => (admin.groupPositions[team] ?? 0) === 0);
+    if (!untouched) continue;
+
+    if (!nextPositions) nextPositions = { ...admin.groupPositions };
+    positions.forEach((pos, team) => {
+      nextPositions![team] = pos;
+    });
+    filledGroups.push(letter);
+  }
+
+  if (!nextPositions) return { merged: admin, filledGroups };
+  return {
+    merged: { ...admin, configured: true, groupPositions: nextPositions },
+    filledGroups,
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// AUTOCOMPLETADO DE RONDAS ELIMINATORIAS
+//
+// Los equipos que ALCANZAN cada ronda son, simplemente, los que aparecen
+// en los cruces de esa fase según la API (ESPN publica los emparejamientos
+// con nombres reales en cuanto se definen). Una ronda solo se rellena si:
+//   - el admin la tiene completamente vacía, y
+//   - la API aporta exactamente el nº de equipos de la ronda (32/16/8/4/2),
+//     todos válidos (se descartan placeholders tipo "TBD").
+// La clave "final" son los 2 finalistas (el 3.er puesto no cuenta aquí).
+// ════════════════════════════════════════════════════════════
+const STAGE_TO_ROUND_KEY: Partial<Record<MatchStage, KnockoutRoundKey>> = {
+  "round-of-32": "dieciseisavos" as KnockoutRoundKey,
+  "round-of-16": "octavos" as KnockoutRoundKey,
+  "quarter-final": "cuartos" as KnockoutRoundKey,
+  "semi-final": "semis" as KnockoutRoundKey,
+  final: "final" as KnockoutRoundKey,
+};
+
+export function applyApiKnockoutsToAdminResults(
+  admin: AdminResults,
+  rawFixtures: unknown
+): { merged: AdminResults; filledRounds: KnockoutRoundKey[] } {
+  const fixtures = sanitizeFixtures(rawFixtures);
+  const filledRounds: KnockoutRoundKey[] = [];
+  if (fixtures.length === 0) return { merged: admin, filledRounds };
+
+  let nextRounds: Record<KnockoutRoundKey, string[]> | null = null;
+
+  for (const [stage, roundKey] of Object.entries(STAGE_TO_ROUND_KEY) as Array<[MatchStage, KnockoutRoundKey]>) {
+    const stored = admin.knockoutRounds[roundKey] || [];
+    const untouched = stored.every((value) => !value);
+    if (!untouched) continue;
+
+    const teams = new Set<string>();
+    fixtures
+      .filter((f) => f.stage === stage)
+      .forEach((f) => {
+        if (TEAM_SET.has(f.homeTeam)) teams.add(f.homeTeam);
+        if (TEAM_SET.has(f.awayTeam)) teams.add(f.awayTeam);
+      });
+
+    const expected = KNOCKOUT_ADMIN_COUNTS[roundKey];
+    if (teams.size !== expected) continue;
+
+    const ordered = [...teams].sort((a, b) => a.localeCompare(b, "es"));
+    if (!nextRounds) nextRounds = { ...admin.knockoutRounds };
+    nextRounds[roundKey] = ordered;
+    filledRounds.push(roundKey);
+  }
+
+  if (!nextRounds) return { merged: admin, filledRounds };
+  return {
+    merged: { ...admin, configured: true, knockoutRounds: nextRounds },
+    filledRounds,
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// SUGERENCIAS DE PREMIOS ESPECIALES A PARTIR DE LOS GOLEADORES
+// ════════════════════════════════════════════════════════════
+interface RawGoalLike {
+  minute: number | null;
+  player: string;
+  side: "home" | "away";
+}
+
+function readGoals(value: unknown): RawGoalLike[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((g) => {
+      const r = g as Record<string, unknown>;
+      const side = r.side === "away" ? "away" : r.side === "home" ? "home" : null;
+      if (!side) return null;
+      return {
+        minute: typeof r.minute === "number" ? r.minute : null,
+        player: String(r.player || "").trim(),
+        side,
+      } as RawGoalLike;
+    })
+    .filter((g): g is RawGoalLike => g !== null);
+}
+
+/** Minuto del PRIMER gol del torneo (partido inaugural). null si aún no hay. */
+export function extractFirstGoalMinute(rawFixtures: unknown): number | null {
+  if (!Array.isArray(rawFixtures)) return null;
+  const opener = WORLD_CUP_MATCHES.find((m) => m.id === 1);
+  if (!opener) return null;
+  for (const f of rawFixtures as Array<Record<string, unknown>>) {
+    const home = String(f.homeTeam || "");
+    const away = String(f.awayTeam || "");
+    const samePair =
+      (home === opener.homeTeam && away === opener.awayTeam) ||
+      (home === opener.awayTeam && away === opener.homeTeam);
+    if (!samePair) continue;
+    if (!FINISHED_STATUSES.has(String(f.statusShort || ""))) return null;
+    const goals = readGoals(f.goals).filter((g) => typeof g.minute === "number");
+    if (goals.length === 0) return null;
+    return Math.min(...goals.map((g) => g.minute as number));
+  }
+  return null;
+}
+
+/** Primer goleador de un equipo en el torneo (cronológico). Solo informativo. */
+export function extractFirstScorerForTeam(
+  rawFixtures: unknown,
+  team: string
+): { player: string; minute: number | null; matchLabel: string } | null {
+  if (!Array.isArray(rawFixtures)) return null;
+  const candidates = (rawFixtures as Array<Record<string, unknown>>)
+    .filter((f) => f.homeTeam === team || f.awayTeam === team)
+    .sort((a, b) => new Date(String(a.kickoff || "")).getTime() - new Date(String(b.kickoff || "")).getTime());
+  for (const f of candidates) {
+    const side = f.homeTeam === team ? "home" : "away";
+    const goals = readGoals(f.goals)
+      .filter((g) => g.side === side && g.player && g.player !== "—")
+      .sort((a, b) => (a.minute ?? 999) - (b.minute ?? 999));
+    if (goals.length > 0) {
+      return {
+        player: goals[0].player,
+        minute: goals[0].minute,
+        matchLabel: `${String(f.homeTeam)} vs ${String(f.awayTeam)}`,
+      };
+    }
+  }
+  return null;
 }

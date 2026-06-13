@@ -157,6 +157,24 @@ function UpcomingMatchCountdown() {
               Esperando datos del partido…
             </p>
           )}
+          {fixture !== null && fixture.goals.length > 0 && (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {(["home", "away"] as const).map((side) => (
+                <div key={side} style={{ textAlign: side === "home" ? "right" : "left" }}>
+                  {fixture.goals
+                    .filter((g) => g.side === side && g.player)
+                    .map((g, i) => (
+                      <p key={`${side}-${i}`} className="text-[10px] text-text-muted" style={{ margin: "0 0 1px" }}>
+                        ⚽ {g.player}
+                        {typeof g.minute === "number" ? ` ${g.minute}'` : ""}
+                        {g.penalty ? " (p)" : ""}
+                        {g.ownGoal ? " (pp)" : ""}
+                      </p>
+                    ))}
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </>
