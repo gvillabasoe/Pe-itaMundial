@@ -733,9 +733,10 @@ function MatchOverlay({
   // Task 2: el partido inaugural (id 1, México - Sudáfrica) muestra además el
   // pick especial "Minuto Primer Gol" de cada porra junto al marcador previsto.
   const isInaugural = match.id === 1;
-  // El primer partido de España (id 14, España - Cabo Verde) muestra además el
-  // pick especial "Primer Goleador Español" de cada porra.
-  const isSpainOpener = match.id === 14;
+  // El primer partido de España (id 14, España - Cabo Verde) no tuvo gol
+  // español, así que el pick "Primer Goleador Español" se muestra en el
+  // siguiente partido de España (id 38, España - Arabia Saudí).
+  const isSpainOpener = match.id === 38;
 
   const rows = useMemo(() => {
     if (!ref) return [];
@@ -894,7 +895,7 @@ function MatchOverlay({
               .map(({ team, pick, text, isDouble, isMine }) => (
                 <div
                   key={team.id}
-                  className="card flex items-center gap-2.5 !py-2.5 !px-3"
+                  className="card flex flex-col !py-2.5 !px-3"
                   style={{
                     borderLeft: isMine
                       ? "3px solid rgb(var(--accent-participante))"
@@ -902,6 +903,7 @@ function MatchOverlay({
                     background: isMine ? "rgba(63,157,78,0.04)" : undefined,
                   }}
                 >
+                  <div className="flex items-center gap-2.5">
                   <span className="font-display text-xs font-bold text-text-faint min-w-[24px]">
                     #{team.currentRank}
                   </span>
@@ -910,9 +912,9 @@ function MatchOverlay({
                     <p className="text-xs font-semibold text-text-primary truncate">
                       {team.name}
                     </p>
-                    <p className="text-[10px] text-text-muted">@{team.username}</p>
+                    <p className="text-[10px] text-text-muted truncate">@{team.username}</p>
                   </div>
-                  <div className="flex flex-col items-end gap-0.5">
+                  <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
                     {text ? (
                       <span
                         className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums"
@@ -940,14 +942,22 @@ function MatchOverlay({
                           : "—"}
                       </span>
                     )}
-                    {isSpainOpener && (
-                      <span className="text-[9px] font-semibold text-text-muted whitespace-nowrap">
-                        1.<sup>er</sup> goleador ESP:{" "}
-                        {team.specials?.primerGolEsp ? team.specials.primerGolEsp : "—"}
-                      </span>
-                    )}
                   </div>
                   {pick && <PickChip status={pick.status} points={pick.points} />}
+                  </div>
+                  {isSpainOpener && (
+                    <div
+                      className="flex items-center gap-1.5 mt-1.5 pt-1.5"
+                      style={{ borderTop: "1px solid rgb(var(--border-subtle))" }}
+                    >
+                      <span className="text-[9px] font-semibold uppercase tracking-wide text-text-faint flex-shrink-0">
+                        1.<sup>er</sup> goleador ESP
+                      </span>
+                      <span className="text-[11px] font-semibold text-text-secondary truncate">
+                        {team.specials?.primerGolEsp ? team.specials.primerGolEsp : "—"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
