@@ -119,7 +119,11 @@ function AuthenticatedMiClub({
     [participants, user.id, user.username]
   );
 
-  const canCreateMore = userTeams.length < 3;
+  // La creación combina el límite por usuario (3) con el switch global del
+  // Admin (allowNewPorras). Los usuarios SIN ninguna porra solo pueden crear
+  // si el switch está habilitado.
+  const newPorrasAllowed = adminResults.allowNewPorras !== false;
+  const canCreateMore = userTeams.length < 3 && newPorrasAllowed;
   const activeTeam = userTeams.find((p) => p.id === selectedTeamId) ?? userTeams[0] ?? null;
 
   // FIX: no incluir selectedTeamId en deps para evitar reset al refetch de SWR
@@ -155,7 +159,20 @@ function AuthenticatedMiClub({
     );
   }
 
-  if (!userTeams.length || (creatingNew && canCreateMore)) {
+  if (!userTeams.length && !newPorrasAllowed) {
+    return (
+      <div className="flex min-h-[72vh] items-center justify-center px-4">
+        <div className="card w-full max-w-[360px] text-center !py-8 animate-fade-in">
+          <p className="font-display text-lg font-bold text-text-warm">Porras cerradas</p>
+          <p className="mt-2 text-sm text-text-muted">
+            La creación de nuevas porras está deshabilitada por el administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if ((!userTeams.length && newPorrasAllowed) || (creatingNew && canCreateMore)) {
     return (
       <MiPorraBuilder user={user} onSaved={handleSaved}
         onCancel={userTeams.length > 0 ? () => setCreatingNew(false) : undefined} />
@@ -176,6 +193,7 @@ function AuthenticatedMiClub({
       userTeams={userTeams} activeTeam={activeTeam} activeTeamId={selectedTeamId}
       onSelectTeam={setSelectedTeamId}
       onCreateNew={canCreateMore ? () => setCreatingNew(true) : undefined}
+      newPorrasAllowed={newPorrasAllowed}
       onEditTeam={canEditPorra() ? setEditingTeam : undefined}
       onDeleted={handleDeleted}
       canCreateMore={canCreateMore}
@@ -261,7 +279,7 @@ function LoginView({ onLogin }: { onLogin: (username: string, password: string) 
 function PrivateZone({
   user, onLogout, favorites, toggleFavorite,
   participants, adminResults, userTeams, activeTeam, activeTeamId,
-  onSelectTeam, onCreateNew, onEditTeam, onDeleted, canCreateMore,
+  onSelectTeam, onCreateNew, newPorrasAllowed, onEditTeam, onDeleted, canCreateMore,
 }: {
   user: { id: string; username: string };
   onLogout: () => void;
@@ -274,6 +292,7 @@ function PrivateZone({
   activeTeamId: string | null;
   onSelectTeam: (id: string) => void;
   onCreateNew?: () => void;
+  newPorrasAllowed: boolean;
   onEditTeam?: (team: Team) => void;
   onDeleted: (teamId: string) => void;
   canCreateMore: boolean;
@@ -319,6 +338,8 @@ function PrivateZone({
               <button className="btn btn-ghost !px-2.5 !py-1.5 text-xs" onClick={onCreateNew}>
                 <Plus size={13} /> Nueva porra
               </button>
+            ) : !newPorrasAllowed ? (
+              <span className="badge badge-muted text-[10px]">Creación cerrada</span>
             ) : !canCreateMore ? (
               <span className="badge badge-muted text-[10px]">Límite alcanzado</span>
             ) : null}

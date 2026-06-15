@@ -38,6 +38,9 @@ export interface AdminResults {
   /** Switch del Admin: si está activo (por defecto), los partidos finalizados
    *  se completan y puntúan solos desde la API en /api/admin-results. */
   autoImportApi: boolean;
+  /** Switch del Admin: si está activo (por defecto), los usuarios pueden crear
+   *  nuevas porras. Si se desactiva, la creación queda bloqueada (servidor + UI). */
+  allowNewPorras: boolean;
   matchResults: Record<string, AdminMatchResult>;
   groupPositions: Record<string, GroupPositionValue>;
   knockoutRounds: Record<KnockoutRoundKey, string[]>;
@@ -144,6 +147,7 @@ export function createDefaultAdminResults(): AdminResults {
     configured: false,
     savedAt: null,
     autoImportApi: true,
+    allowNewPorras: true,
     matchResults: WORLD_CUP_MATCH_IDS.reduce(
       (acc, matchId) => { acc[matchId] = { home: null, away: null, statusShort: "NS" }; return acc; },
       {} as Record<string, AdminMatchResult>
@@ -214,6 +218,7 @@ export function sanitizeAdminResults(value: unknown): AdminResults {
     configured: Boolean(raw.configured),
     savedAt: typeof raw.savedAt === "string" && raw.savedAt ? raw.savedAt : defaults.savedAt,
     autoImportApi: raw.autoImportApi === undefined ? true : Boolean(raw.autoImportApi),
+    allowNewPorras: raw.allowNewPorras === undefined ? true : Boolean(raw.allowNewPorras),
     matchResults,
     groupPositions,
     knockoutRounds,

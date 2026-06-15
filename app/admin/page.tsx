@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle, ArrowDownUp, BarChart3, Check, ChevronDown, ChevronUp, Clock3, Edit2, Eye, EyeOff,
-  KeyRound, LayoutGrid, ListFilter, LogOut, MapPin, RefreshCw, Save, Shield, Sparkles, Tag, Trash2,
+  KeyRound, LayoutGrid, ListFilter, Loader2, LogOut, MapPin, RefreshCw, Save, Shield, Sparkles, Tag, Trash2,
   Trophy, UserCheck, UserPlus, Users, UserX,
 } from "lucide-react";
 import { CountrySelectionPreview, Flag, GroupBadge, SectionTitle } from "@/components/ui";
@@ -548,7 +548,12 @@ export default function AdminPage() {
 
         {/* ════ TAB: PORRAS ════ */}
         {activeTab === "porras" && (
-          <PorrasManagementSection participants={participants} onEditTeam={setEditingTeam} />
+          <PorrasManagementSection
+            participants={participants}
+            onEditTeam={setEditingTeam}
+            allowNewPorras={form.allowNewPorras}
+            onToggleAllowNewPorras={(value) => setForm((current) => ({ ...current, allowNewPorras: value }))}
+          />
         )}
 
         {/* ════ TAB: PROGRESO ════ */}
@@ -927,11 +932,33 @@ function UsersManagementSection() {
 // TAB: GESTIÓN DE PORRAS
 // ════════════════════════════════════════════════════════════
 
-function PorrasManagementSection({ participants, onEditTeam }: { participants: Team[]; onEditTeam: (team: Team) => void }) {
+function PorrasManagementSection({ participants, onEditTeam, allowNewPorras, onToggleAllowNewPorras }: { participants: Team[]; onEditTeam: (team: Team) => void; allowNewPorras: boolean; onToggleAllowNewPorras: (value: boolean) => void }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [savingSwitch, setSavingSwitch] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  const handleToggleNewPorras = async () => {
+    const next = !allowNewPorras;
+    setSavingSwitch(true);
+    setSwitchError(null);
+    try {
+      const res = await fetch("/api/admin-results/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowNewPorras: next }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.error || `Error ${res.status}`);
+      onToggleAllowNewPorras(next);
+    } catch (error) {
+      setSwitchError(error instanceof Error ? error.message : "No se ha podido guardar el ajuste");
+    } finally {
+      setSavingSwitch(false);
+    }
+  };
 
   const byUser = useMemo(() => {
     const map = new Map<string, Team[]>();
@@ -962,12 +989,78 @@ function PorrasManagementSection({ participants, onEditTeam }: { participants: T
     }
   };
 
+  const newPorrasSwitch = (
+    <div className="card mb-4" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={allowNewPorras}
+          onClick={() => void handleToggleNewPorras()}
+          disabled={savingSwitch}
+          style={{
+            position: "relative",
+            width: 44,
+            height: 24,
+            borderRadius: 999,
+            border: "1px solid " + (allowNewPorras ? "rgba(62,155,79,0.5)" : "rgb(var(--border-default))"),
+            background: allowNewPorras ? "rgba(62,155,79,0.35)" : "rgba(255,255,255,0.06)",
+            cursor: savingSwitch ? "wait" : "pointer",
+            transition: "background 160ms ease",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: allowNewPorras ? 22 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: allowNewPorras ? "#3E9B4F" : "rgb(var(--text-muted))",
+              transition: "left 160ms ease, background 160ms ease",
+            }}
+          />
+        </button>
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <p className="text-[12px] font-semibold text-text-warm" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+            {savingSwitch ? <Loader2 size={13} className="animate-spin" /> : null}
+            Permitir crear nuevas porras
+            <span
+              className="text-[9px] font-bold uppercase tracking-widest"
+              style={{ color: allowNewPorras ? "#3E9B4F" : "rgb(var(--text-muted))" }}
+            >
+              {allowNewPorras ? "Habilitado" : "Bloqueado"}
+            </span>
+          </p>
+          <p className="text-[11px] text-text-muted" style={{ margin: 0 }}>
+            {allowNewPorras
+              ? "Los usuarios pueden crear porras nuevas (hasta 3 por usuario)."
+              : "Creación de porras nuevas bloqueada. Editar y eliminar las existentes sigue disponible."}
+          </p>
+        </div>
+      </div>
+      {switchError ? (
+        <p role="status" className="text-[11px]" style={{ margin: 0, color: "rgb(var(--danger))" }}>
+          {switchError}
+        </p>
+      ) : null}
+    </div>
+  );
+
   if (byUser.size === 0) {
-    return <div className="card text-center py-10"><p className="text-text-muted text-sm">No hay porras guardadas.</p></div>;
+    return (
+      <div className="space-y-4 animate-fade-in">
+        {newPorrasSwitch}
+        <div className="card text-center py-10"><p className="text-text-muted text-sm">No hay porras guardadas.</p></div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {newPorrasSwitch}
       {deleteError && (
         <div className="card !border-danger/20" style={{ background: "rgb(var(--danger-soft))" }}>
           <p className="text-sm text-danger">{deleteError}</p>

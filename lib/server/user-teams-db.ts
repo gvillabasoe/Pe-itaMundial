@@ -10,6 +10,7 @@ import {
   type UserTeamsStore,
 } from "@/lib/user-teams";
 import { queryDb, withTransaction } from "@/lib/db";
+import { getAdminResultsFromDb } from "@/lib/server/admin-results-db";
 
 type UserTeamRow = {
   id: string;
@@ -579,6 +580,12 @@ export async function saveUserTeamToDb(rawEntry: Partial<Team>) {
     );
 
     if (existing.rowCount === 0) {
+      // Switch global del Admin: si la creación está deshabilitada, no se
+      // permiten porras NUEVAS (las ediciones de porras existentes sí siguen).
+      const adminResults = await getAdminResultsFromDb();
+      if (!adminResults.allowNewPorras) {
+        throw new Error("La creación de nuevas porras está deshabilitada por el administrador.");
+      }
       const totalForUser = await countOtherTeamsForUser(client, savedEntry.userId, savedEntry.id);
       if (totalForUser >= 3) {
         throw new Error("Cada usuario puede tener un máximo de 3 porras.");

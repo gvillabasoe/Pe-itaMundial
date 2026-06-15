@@ -45,7 +45,12 @@ export async function POST(request: Request) {
     return NextResponse.json(savedEntry, { headers: responseHeaders() });
   } catch (error) {
     const message = normalizeUserTeamsError(error, "No se ha podido guardar la porra.");
-    const status = message === "La porra no es válida." || message.includes("máximo de 3 porras") ? 400 : 500;
+    const status =
+      message === "La porra no es válida." ||
+      message.includes("máximo de 3 porras") ||
+      message.includes("creación de nuevas porras")
+        ? 400
+        : 500;
     return NextResponse.json({ error: message }, { status, headers: responseHeaders() });
   }
 }
