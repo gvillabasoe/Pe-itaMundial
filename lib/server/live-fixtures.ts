@@ -68,6 +68,20 @@ export interface ApiGoalEvent {
   penalty: boolean;
 }
 
+export type ApiMatchEventKind = "goal" | "yellow" | "red" | "yellow-red" | "substitution" | "var" | "penalty-missed";
+
+export interface ApiMatchEvent {
+  minute: number | null;
+  type: ApiMatchEventKind;
+  side: "home" | "away";
+  /** Jugador principal (goleador, amonestado, o el que ENTRA en un cambio) */
+  player: string;
+  /** Solo en sustituciones: jugador que SALE */
+  playerOut?: string;
+  ownGoal?: boolean;
+  penalty?: boolean;
+}
+
 export interface ApiFixtureItem {
   apiId: number | null;
   stage: MatchStage;
@@ -82,6 +96,8 @@ export interface ApiFixtureItem {
   score: { home: number | null; away: number | null };
   /** Goleadores (solo disponible vía ESPN; vacío en otros proveedores) */
   goals?: ApiGoalEvent[];
+  /** Línea de tiempo completa: goles, tarjetas, cambios (solo ESPN) */
+  events?: ApiMatchEvent[];
 }
 
 export interface ResultsApiPayload {
@@ -550,35 +566,56 @@ async function fetchFromEspn(): Promise<{ fixtures: ApiFixtureItem[] | null; err
       const awayTeamId = String((awayEntry.team as Record<string, unknown>)?.id ?? awayEntry.id ?? "");
       const details = Array.isArray(competition.details) ? competition.details : [];
       const goals: ApiGoalEvent[] = [];
+      const events: ApiMatchEvent[] = [];
+      const sideOf = (teamId: string): "home" | "away" | null => {
+        if (teamId && teamId === homeTeamId) return "home";
+        if (teamId && teamId === awayTeamId) return "away";
+        return null;
+      };
       for (const d of details as Array<Record<string, unknown>>) {
         const type = (d.type || {}) as Record<string, unknown>;
         const typeText = String(type.text || "").toLowerCase();
-        const isGoal = d.scoringPlay === true || typeText.includes("goal");
-        if (!isGoal) continue;
-        if (d.redCard === true || d.yellowCard === true) continue;
         const clock = (d.clock || {}) as Record<string, unknown>;
         const minute = parseEspnMinute(String(clock.displayValue || ""));
         const detailTeam = (d.team || {}) as Record<string, unknown>;
-        const detailTeamId = String(detailTeam.id ?? "");
-        const ownGoal = d.ownGoal === true || typeText.includes("own goal");
-        // En ESPN, team.id del detail es el equipo al que se ACREDITA el gol
-        // en el marcador (en gol en propia ya viene acreditado al rival).
-        let side: "home" | "away" | null = null;
-        if (detailTeamId && detailTeamId === homeTeamId) side = "home";
-        else if (detailTeamId && detailTeamId === awayTeamId) side = "away";
+        const side = sideOf(String(detailTeam.id ?? ""));
         if (!side) continue;
         const involved = Array.isArray(d.athletesInvolved) ? d.athletesInvolved : [];
-        const first = (involved[0] || {}) as Record<string, unknown>;
-        const player = String(first.displayName || first.shortName || first.fullName || "").trim();
-        goals.push({
-          minute,
-          player: player || "—",
-          side,
-          ownGoal,
-          penalty: d.penaltyKick === true || typeText.includes("penalty"),
-        });
+        const nameOf = (idx: number): string => {
+          const a = (involved[idx] || {}) as Record<string, unknown>;
+          return String(a.displayName || a.shortName || a.fullName || "").trim();
+        };
+        const player = nameOf(0) || "—";
+
+        const isGoal = d.scoringPlay === true || (typeText.includes("goal") && !typeText.includes("own goal disallowed"));
+        const ownGoal = d.ownGoal === true || typeText.includes("own goal");
+        const penalty = d.penaltyKick === true || typeText.includes("penalty");
+        const isYellow = d.yellowCard === true || typeText === "yellow card";
+        const isRed = d.redCard === true || typeText.includes("red card");
+        const isSecondYellow = typeText.includes("second yellow") || (isRed && isYellow);
+        const isSub = typeText.includes("substitution") || Array.isArray(d.athletesInvolved) && typeText.includes("sub");
+        const isVar = typeText.includes("var") || typeText.includes("video review");
+        const penaltyMissed = typeText.includes("penalty - missed") || typeText.includes("penalty missed");
+
+        if (isGoal && !isYellow && !isRed) {
+          goals.push({ minute, player, side, ownGoal, penalty });
+          events.push({ minute, type: "goal", side, player, ownGoal, penalty });
+        } else if (penaltyMissed) {
+          events.push({ minute, type: "penalty-missed", side, player });
+        } else if (isSecondYellow) {
+          events.push({ minute, type: "yellow-red", side, player });
+        } else if (isRed) {
+          events.push({ minute, type: "red", side, player });
+        } else if (isYellow) {
+          events.push({ minute, type: "yellow", side, player });
+        } else if (isSub) {
+          events.push({ minute, type: "substitution", side, player, playerOut: nameOf(1) || undefined });
+        } else if (isVar) {
+          events.push({ minute, type: "var", side, player });
+        }
       }
       goals.sort((a, b) => (a.minute ?? 999) - (b.minute ?? 999));
+      events.sort((a, b) => (a.minute ?? 999) - (b.minute ?? 999));
 
       const parseScore = (value: unknown): number | null => {
         const n = typeof value === "string" ? parseInt(value, 10) : typeof value === "number" ? value : NaN;
@@ -607,6 +644,7 @@ async function fetchFromEspn(): Promise<{ fixtures: ApiFixtureItem[] | null; err
           away: started ? parseScore(awayEntry.score) : null,
         },
         goals,
+        events,
       });
     }
 

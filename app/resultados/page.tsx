@@ -9,7 +9,7 @@ import { EmptyState, Flag, GroupBadge, InitialsAvatar, PickChip, Skeleton } from
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 import { getCityBgColor, getCityColor, REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
-import { getStatusDisplay, getStatusGroup, isLivePollingStatus } from "@/lib/config/match-status";
+import { getStatusDisplay, getStatusGroup, isLiveLike, isLivePollingStatus } from "@/lib/config/match-status";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
 import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
 import { resolveKnockoutMatchTeams } from "@/lib/worldcup/resolve-knockout";
@@ -32,6 +32,7 @@ interface ApiFixtureItem {
   city: string | null;
   score: { home: number | null; away: number | null };
   goals?: ApiGoalEvent[];
+  events?: ApiMatchEvent[];
 }
 
 interface ApiGoalEvent {
@@ -40,6 +41,16 @@ interface ApiGoalEvent {
   side: "home" | "away";
   ownGoal: boolean;
   penalty: boolean;
+}
+
+interface ApiMatchEvent {
+  minute: number | null;
+  type: "goal" | "yellow" | "red" | "yellow-red" | "substitution" | "var" | "penalty-missed";
+  side: "home" | "away";
+  player: string;
+  playerOut?: string;
+  ownGoal?: boolean;
+  penalty?: boolean;
 }
 
 interface ResultsApiPayload {
@@ -52,6 +63,8 @@ interface ResultsApiPayload {
 
 interface MatchView {
   id: number;
+  /** ID del evento en ESPN, para pedir estadísticas del summary (o null) */
+  apiId: number | null;
   stage: MatchStage;
   roundLabel: string;
   hostCity: string;
@@ -68,6 +81,8 @@ interface MatchView {
   matchday: 1 | 2 | 3 | null;
   /** Goleadores según la API (vacío si el proveedor no los da) */
   goals: ApiGoalEvent[];
+  /** Cronología de eventos (goles, tarjetas, cambios) según la API */
+  events: ApiMatchEvent[];
 }
 
 // ════════════════════════════════════════════════════════════
@@ -203,6 +218,7 @@ function mergeScheduleWithApi(
 
     return {
       id: m.id,
+      apiId: api?.apiId ?? null,
       stage: m.stage,
       roundLabel: m.roundLabel,
       hostCity: m.hostCity,
@@ -219,6 +235,7 @@ function mergeScheduleWithApi(
       group: m.stage === "group" ? getGroupForMatch(m.homeTeam, m.awayTeam) : null,
       matchday: null, // se rellena después en assignMatchdays
       goals: api?.goals ?? [],
+      events: api?.events ?? [],
     };
   });
 
@@ -283,6 +300,7 @@ export default function ResultadosPage() {
   const { participants, adminResults } = useScoredParticipants();
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<MatchStage | "all">("all");
+  const [quickFilter, setQuickFilter] = useState<"none" | "live" | "today">("none");
   const [zoneFilter, setZoneFilter] = useState<Zone | "all">("all");
   const [openSection, setOpenSection] = useState<string | null>("group-1");
   const [selectedMatch, setSelectedMatch] = useState<MatchView | null>(null);
@@ -328,9 +346,33 @@ export default function ResultadosPage() {
     return result.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   }, [adminResults, data]);
 
+  // Nº de partidos en vivo / hoy para los badges del filtro rápido
+  const { liveCount, todayCount } = useMemo(() => {
+    const todayMadrid = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    let live = 0, today = 0;
+    for (const m of merged) {
+      if (isLiveLike(m.statusShort)) live += 1;
+      const d = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(m.kickoff));
+      if (d === todayMadrid) today += 1;
+    }
+    return { liveCount: live, todayCount: today };
+  }, [merged]);
+
+  // Si el filtro rápido "En vivo" está activo pero ya no hay partidos en vivo,
+  // se desactiva solo para no dejar la lista vacía.
+  useEffect(() => {
+    if (quickFilter === "live" && liveCount === 0) setQuickFilter("none");
+  }, [quickFilter, liveCount]);
+
   // Filtros en cascada
   const filtered = useMemo(() => {
     let items = [...merged];
+    if (quickFilter === "live") {
+      items = items.filter((m) => isLiveLike(m.statusShort));
+    } else if (quickFilter === "today") {
+      const todayMadrid = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      items = items.filter((m) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(m.kickoff)) === todayMadrid);
+    }
     if (stageFilter !== "all") items = items.filter((m) => m.stage === stageFilter);
     if (zoneFilter !== "all") items = items.filter((m) => m.zone === zoneFilter);
     if (search.trim()) {
@@ -340,7 +382,7 @@ export default function ResultadosPage() {
       );
     }
     return items;
-  }, [merged, stageFilter, zoneFilter, search]);
+  }, [merged, stageFilter, zoneFilter, search, quickFilter]);
 
   // Agrupación: fase de grupos partida por jornada, knockouts independientes
   const sections = useMemo(() => {
@@ -420,6 +462,33 @@ export default function ResultadosPage() {
           value={search}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
         />
+      </div>
+
+      {/* Filtro rápido: En vivo / Hoy */}
+      <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
+        {liveCount > 0 && (
+          <button
+            className={`pill ${quickFilter === "live" ? "active" : ""}`}
+            onClick={() => setQuickFilter(quickFilter === "live" ? "none" : "live")}
+            style={quickFilter === "live" ? { background: "rgba(220,38,38,0.15)", color: "#ef4444", borderColor: "#ef4444" } : undefined}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span className="animate-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
+              En vivo ({liveCount})
+            </span>
+          </button>
+        )}
+        <button
+          className={`pill ${quickFilter === "today" ? "active" : ""}`}
+          onClick={() => setQuickFilter(quickFilter === "today" ? "none" : "today")}
+        >
+          Hoy{todayCount > 0 ? ` (${todayCount})` : ""}
+        </button>
+        {quickFilter !== "none" && (
+          <button className="pill" onClick={() => setQuickFilter("none")}>
+            Quitar filtro
+          </button>
+        )}
       </div>
 
       {/* Filtros región */}
@@ -645,6 +714,63 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
   );
 }
 
+interface MatchStatsPayload {
+  available: boolean;
+  stats: { label: string; home: string; away: string }[];
+}
+
+function pctToNumber(value: string): number | null {
+  const m = /([\d.]+)\s*%/.exec(value);
+  if (m) return parseFloat(m[1]);
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Estadísticas del partido (posesión, tiros...) cargadas BAJO DEMANDA desde
+// el endpoint summary de ESPN al abrir el detalle. Si no hay datos (partido
+// sin empezar, o la API no los da), el bloque no se muestra.
+function MatchStatsBlock({ apiId }: { apiId: number | null }) {
+  const { data } = useSWR<MatchStatsPayload>(
+    apiId ? `/api/results/match?event=${apiId}` : null,
+    async (url: string) => {
+      const r = await fetch(url, { cache: "no-store" });
+      return r.json();
+    },
+    { revalidateOnFocus: false, dedupingInterval: 30_000 }
+  );
+
+  if (!apiId || !data?.available || !data.stats.length) return null;
+
+  return (
+    <div className="card !py-2.5 !px-3 mb-4">
+      <p className="text-[9px] uppercase tracking-widest text-text-muted" style={{ margin: "0 0 8px" }}>
+        Estadísticas
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {data.stats.map((st, i) => {
+          const hv = pctToNumber(st.home);
+          const av = pctToNumber(st.away);
+          const total = hv != null && av != null ? hv + av : null;
+          const homePct = total && total > 0 ? (hv! / total) * 100 : 50;
+          return (
+            <div key={`${st.label}-${i}`}>
+              <div className="flex items-center justify-between text-[11px] mb-0.5">
+                <span className="font-bold tabular-nums text-text-primary">{st.home}</span>
+                <span className="text-text-muted text-[10px]">{st.label}</span>
+                <span className="font-bold tabular-nums text-text-primary">{st.away}</span>
+              </div>
+              <div style={{ display: "flex", height: 4, borderRadius: 2, overflow: "hidden", background: "rgb(var(--border-default))" }}>
+                <div style={{ width: `${homePct}%`, background: "#C99625" }} />
+                <div style={{ width: `${100 - homePct}%`, background: "rgba(255,255,255,0.18)" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function MatchOverlay({
   match,
   participants,
@@ -714,30 +840,52 @@ function MatchOverlay({
           </button>
         </div>
 
-        {/* Goleadores según la API */}
-        {match.goals.length > 0 && (
+        {/* Cronología del partido según la API (goles, tarjetas, cambios) */}
+        {match.events.length > 0 && (
           <div className="card !py-2.5 !px-3 mb-4">
-            <p className="text-[9px] uppercase tracking-widest text-text-muted mb-1.5" style={{ margin: "0 0 6px" }}>
-              Goles
+            <p className="text-[9px] uppercase tracking-widest text-text-muted" style={{ margin: "0 0 8px" }}>
+              Cronología
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              {(["home", "away"] as const).map((side) => (
-                <div key={side} style={{ textAlign: side === "home" ? "left" : "right" }}>
-                  {match.goals
-                    .filter((g) => g.side === side)
-                    .map((g, i) => (
-                      <p key={`${side}-${i}`} className="text-[11px] text-text-primary" style={{ margin: "0 0 2px" }}>
-                        ⚽ {g.player}
-                        {typeof g.minute === "number" ? ` ${g.minute}'` : ""}
-                        {g.penalty ? " (p)" : ""}
-                        {g.ownGoal ? " (pp)" : ""}
-                      </p>
-                    ))}
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {match.events.map((ev, i) => {
+                const icon =
+                  ev.type === "goal" ? (ev.ownGoal ? "⚽🔴" : "⚽")
+                  : ev.type === "yellow" ? "🟨"
+                  : ev.type === "red" ? "🟥"
+                  : ev.type === "yellow-red" ? "🟨🟥"
+                  : ev.type === "substitution" ? "🔄"
+                  : ev.type === "var" ? "📺"
+                  : ev.type === "penalty-missed" ? "❌"
+                  : "•";
+                const isHome = ev.side === "home";
+                const label =
+                  ev.type === "substitution"
+                    ? `${ev.player}${ev.playerOut ? ` ↔ ${ev.playerOut}` : ""}`
+                    : `${ev.player}${ev.type === "goal" && ev.penalty ? " (p)" : ""}${ev.type === "goal" && ev.ownGoal ? " (p.p.)" : ""}${ev.type === "penalty-missed" ? " (penalti fallado)" : ""}`;
+                return (
+                  <div
+                    key={`${ev.type}-${i}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flexDirection: isHome ? "row" : "row-reverse",
+                      textAlign: isHome ? "left" : "right",
+                    }}
+                  >
+                    <span className="text-[10px] font-bold tabular-nums text-text-muted" style={{ minWidth: 26, textAlign: isHome ? "left" : "right" }}>
+                      {typeof ev.minute === "number" ? `${ev.minute}'` : ""}
+                    </span>
+                    <span style={{ fontSize: 11 }}>{icon}</span>
+                    <span className="text-[11px] text-text-primary" style={{ flex: 1 }}>{label}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
+
+        <MatchStatsBlock apiId={match.apiId} />
 
         <div className="flex items-center justify-center gap-3 mb-5">
           <div className="flex items-center gap-2 flex-1 justify-end">
