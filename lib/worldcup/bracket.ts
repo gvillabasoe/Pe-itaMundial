@@ -48,6 +48,10 @@ export interface BracketMatch {
   statusShort: string;
   score: { home: number | null; away: number | null };
   kickoff: string | null;
+  /** IDs de los partidos de la ronda anterior que alimentan este cruce
+   *  (p.ej. [74, 77] para un octavo que enfrenta a "Ganador 74" y "Ganador 77").
+   *  Vacío en Ronda de 32. Permite dibujar las llaves del bracket. */
+  sourceMatchIds: number[];
 }
 
 // Columnas del bracket en orden de presentación (de 32avos a final).
@@ -94,6 +98,13 @@ export function buildBracket(
         .map((m): BracketMatch => {
           const resolved = resolveKnockoutMatchTeams(m, admin);
           const result = resultByMatchId.get(m.id);
+          // Extraer los partidos-origen de los placeholders "Ganador N" / "Perdedor N"
+          const sourceMatchIds = [m.homeTeam, m.awayTeam]
+            .map((slot) => {
+              const match = /(?:Ganador|Perdedor)\s+(\d+)/i.exec(slot);
+              return match ? parseInt(match[1], 10) : null;
+            })
+            .filter((n): n is number => n !== null);
           return {
             id: m.id,
             stage: m.stage,
@@ -106,6 +117,7 @@ export function buildBracket(
             statusShort: result?.statusShort || "NS",
             score: result?.score || { home: null, away: null },
             kickoff: kickoffByMatchId?.get(m.id) || null,
+            sourceMatchIds,
           };
         });
       return { stage: col.stage, label: col.label, matches };

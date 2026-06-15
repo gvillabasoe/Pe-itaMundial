@@ -125,9 +125,36 @@ export function KnockoutBracket() {
     setSelected((cur) => (cur && cur.team === team && cur.matchId === matchId ? null : { team, stage, matchId }));
   };
 
-  const currentMatches = matchesByStage.get(activeStage) || [];
+  const rawCurrent = matchesByStage.get(activeStage) || [];
   const nextStage = NEXT_STAGE[activeStage];
-  const nextMatches = nextStage ? matchesByStage.get(nextStage) || [] : [];
+  const rawNext = nextStage ? matchesByStage.get(nextStage) || [] : [];
+
+  // Ordenar para que las llaves del bracket sean correctas: cada partido de
+  // la ronda SIGUIENTE define (vía sourceMatchIds) qué dos partidos de la
+  // ronda actual se cruzan. Reordenamos la ronda actual en pares consecutivos
+  // según ese cruce real, y dejamos la siguiente en ese mismo orden — así la
+  // llave une visualmente a los equipos que de verdad se enfrentan.
+  const { currentMatches, nextMatches } = useMemo(() => {
+    if (rawNext.length === 0) {
+      return { currentMatches: [...rawCurrent].sort((a, b) => a.id - b.id), nextMatches: rawNext };
+    }
+    const byId = new Map(rawCurrent.map((m) => [m.id, m]));
+    const orderedNext = [...rawNext].sort((a, b) => a.id - b.id);
+    const orderedCurrent: BracketMatch[] = [];
+    const used = new Set<number>();
+    for (const next of orderedNext) {
+      for (const srcId of next.sourceMatchIds) {
+        const src = byId.get(srcId);
+        if (src && !used.has(srcId)) {
+          orderedCurrent.push(src);
+          used.add(srcId);
+        }
+      }
+    }
+    // Por si algún partido actual no quedó referenciado, añadirlo al final
+    for (const m of rawCurrent) if (!used.has(m.id)) orderedCurrent.push(m);
+    return { currentMatches: orderedCurrent, nextMatches: orderedNext };
+  }, [rawCurrent, rawNext]);
 
   return (
     <div className="card mb-3 !p-0 overflow-hidden animate-fade-in">
