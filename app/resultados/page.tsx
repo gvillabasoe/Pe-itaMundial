@@ -832,21 +832,49 @@ function MatchOverlay({
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-3 mb-5">
-          <div className="flex items-center gap-2 flex-1 justify-end">
-            <span className="font-display text-sm font-bold text-text-primary">
-              {match.homeTeam}
-            </span>
-            <Flag country={match.homeTeam} size="md" />
-          </div>
-          <span className="font-display text-xl font-black text-text-faint">vs</span>
-          <div className="flex items-center gap-2 flex-1">
-            <Flag country={match.awayTeam} size="md" />
-            <span className="font-display text-sm font-bold text-text-primary">
-              {match.awayTeam}
-            </span>
-          </div>
-        </div>
+        {(() => {
+          const overlaySg = getStatusGroup(match.statusShort);
+          const overlayShowScore =
+            (overlaySg === "live" || overlaySg === "finished") &&
+            typeof match.score.home === "number" &&
+            typeof match.score.away === "number";
+          return (
+            <div className="mb-5">
+              <div className="flex items-center justify-center mb-2.5">
+                <span className={getStatusBadgeClass(match.statusShort)}>
+                  {getStatusDisplay(match.statusShort, {
+                    elapsed: match.minute,
+                    kickoff: match.kickoff,
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <div className="flex flex-1 items-center justify-end gap-2 text-right">
+                  <span className="font-display text-sm font-bold text-text-primary truncate">
+                    {match.homeTeam}
+                  </span>
+                  <Flag country={match.homeTeam} size="md" />
+                </div>
+                <div
+                  className="font-display text-2xl font-black rounded-xl px-4 py-2 min-w-[84px] text-center tabular-nums"
+                  style={{
+                    background: overlayShowScore ? "rgb(var(--bg-elevated))" : "rgb(var(--bg-muted))",
+                    color: overlayShowScore ? "rgb(var(--text-primary))" : "rgb(var(--text-faint))",
+                    border: overlayShowScore ? "1px solid rgb(var(--border-default))" : undefined,
+                  }}
+                >
+                  {overlayShowScore ? `${match.score.home}-${match.score.away}` : "vs"}
+                </div>
+                <div className="flex flex-1 items-center gap-2">
+                  <Flag country={match.awayTeam} size="md" />
+                  <span className="font-display text-sm font-bold text-text-primary truncate">
+                    {match.awayTeam}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <h4 className="text-[10px] uppercase tracking-widest font-semibold text-text-muted mb-2 flex items-center gap-1.5">
           <Users size={11} /> Predicciones de la peñita
