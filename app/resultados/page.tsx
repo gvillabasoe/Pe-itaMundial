@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { AlertCircle, ChevronDown, ChevronUp, Clock3, MapPin, RefreshCw, Search, Users, Wifi, WifiOff, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { LiveGroupTables } from "@/components/live-group-tables";
+import { KnockoutBracket } from "@/components/knockout-bracket";
 import { EmptyState, Flag, GroupBadge, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
@@ -449,6 +450,9 @@ export default function ResultadosPage() {
       {/* Tablas de grupo en vivo (criterios FIFA, plegable) */}
       <LiveGroupTables />
 
+      {/* Cuadro de la fase final (bracket, plegable) */}
+      <KnockoutBracket />
+
       {/* Buscador */}
       <div className="relative mb-3">
         <Search
@@ -714,63 +718,6 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
   );
 }
 
-interface MatchStatsPayload {
-  available: boolean;
-  stats: { label: string; home: string; away: string }[];
-}
-
-function pctToNumber(value: string): number | null {
-  const m = /([\d.]+)\s*%/.exec(value);
-  if (m) return parseFloat(m[1]);
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-// Estadísticas del partido (posesión, tiros...) cargadas BAJO DEMANDA desde
-// el endpoint summary de ESPN al abrir el detalle. Si no hay datos (partido
-// sin empezar, o la API no los da), el bloque no se muestra.
-function MatchStatsBlock({ apiId }: { apiId: number | null }) {
-  const { data } = useSWR<MatchStatsPayload>(
-    apiId ? `/api/results/match?event=${apiId}` : null,
-    async (url: string) => {
-      const r = await fetch(url, { cache: "no-store" });
-      return r.json();
-    },
-    { revalidateOnFocus: false, dedupingInterval: 30_000 }
-  );
-
-  if (!apiId || !data?.available || !data.stats.length) return null;
-
-  return (
-    <div className="card !py-2.5 !px-3 mb-4">
-      <p className="text-[9px] uppercase tracking-widest text-text-muted" style={{ margin: "0 0 8px" }}>
-        Estadísticas
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {data.stats.map((st, i) => {
-          const hv = pctToNumber(st.home);
-          const av = pctToNumber(st.away);
-          const total = hv != null && av != null ? hv + av : null;
-          const homePct = total && total > 0 ? (hv! / total) * 100 : 50;
-          return (
-            <div key={`${st.label}-${i}`}>
-              <div className="flex items-center justify-between text-[11px] mb-0.5">
-                <span className="font-bold tabular-nums text-text-primary">{st.home}</span>
-                <span className="text-text-muted text-[10px]">{st.label}</span>
-                <span className="font-bold tabular-nums text-text-primary">{st.away}</span>
-              </div>
-              <div style={{ display: "flex", height: 4, borderRadius: 2, overflow: "hidden", background: "rgb(var(--border-default))" }}>
-                <div style={{ width: `${homePct}%`, background: "#C99625" }} />
-                <div style={{ width: `${100 - homePct}%`, background: "rgba(255,255,255,0.18)" }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function MatchOverlay({
   match,
   participants,
@@ -884,8 +831,6 @@ function MatchOverlay({
             </div>
           </div>
         )}
-
-        <MatchStatsBlock apiId={match.apiId} />
 
         <div className="flex items-center justify-center gap-3 mb-5">
           <div className="flex items-center gap-2 flex-1 justify-end">
