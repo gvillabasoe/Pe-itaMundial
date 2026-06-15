@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { GitBranch, ChevronDown, ChevronUp, X, Check, Minus, Trophy, Medal } from "lucide-react";
 import { CountryWithFlag, Flag } from "@/components/ui";
@@ -17,12 +17,12 @@ import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
 import { WORLD_CUP_MATCHES, type MatchStage } from "@/lib/worldcup/schedule";
 
 // ════════════════════════════════════════════════════════════
-// Cuadro de la fase final estilo "bracket" (inspirado en Apple Sports).
-// Navegación por pestañas de ronda; cada ronda muestra tarjetas grandes
-// con estadio, banderas, fecha/hora y marcador, y conectores en llave
-// hacia los cruces de la ronda siguiente (mostrada desplazada a la
-// derecha). Al tocar una selección, panel de qué porras la tienen
-// avanzando a la siguiente ronda.
+// Cuadro de la fase final en formato bracket CONTINUO: todas las
+// rondas en columnas conectadas por llaves, con scroll horizontal de
+// un tirón (Ronda de 32 → Octavos → Cuartos → Semis → Final).
+// Al abrir, se posiciona automáticamente en la ronda activa según la
+// fecha actual (la última ronda cuyo primer partido ya ha empezado).
+// Al tocar una selección, panel de qué porras la tienen avanzando.
 // ════════════════════════════════════════════════════════════
 
 interface FixturesPayload {
@@ -39,13 +39,13 @@ const KICKOFF_BY_ID = new Map(
   WORLD_CUP_MATCHES.filter((m) => m.stage !== "group").map((m) => [m.id, getKickoffByMatchId(m.id)])
 );
 
-// Pestañas de ronda (la final y el 3.er puesto se agrupan en "Final")
-const ROUND_TABS: { stage: MatchStage; label: string; short: string }[] = [
-  { stage: "round-of-32", label: "Ronda de 32", short: "32avos" },
-  { stage: "round-of-16", label: "Octavos de final", short: "Octavos" },
-  { stage: "quarter-final", label: "Cuartos de final", short: "Cuartos" },
-  { stage: "semi-final", label: "Semifinal", short: "Semis" },
-  { stage: "final", label: "Final", short: "Final" },
+// Columnas del bracket (la final + 3.er puesto se agrupan en la última)
+const COLUMN_STAGES: { stage: MatchStage; label: string }[] = [
+  { stage: "round-of-32", label: "Ronda de 32" },
+  { stage: "round-of-16", label: "Octavos" },
+  { stage: "quarter-final", label: "Cuartos" },
+  { stage: "semi-final", label: "Semifinal" },
+  { stage: "final", label: "Final" },
 ];
 
 const NEXT_STAGE: Partial<Record<MatchStage, MatchStage>> = {
@@ -54,6 +54,32 @@ const NEXT_STAGE: Partial<Record<MatchStage, MatchStage>> = {
   "quarter-final": "semi-final",
   "semi-final": "final",
 };
+
+// Primer kickoff (ms) de cada ronda, derivado del calendario real.
+const ROUND_START_MS: Record<string, number> = (() => {
+  const out: Record<string, number> = {};
+  for (const { stage } of COLUMN_STAGES) {
+    const dates = WORLD_CUP_MATCHES.filter((m) => m.stage === stage)
+      .map((m) => Date.parse(getKickoffByMatchId(m.id) || ""))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (dates.length) out[stage] = dates[0];
+  }
+  return out;
+})();
+
+// Ronda activa según la fecha: la última cuyo primer partido ya empezó.
+function activeStageForDate(now: number): MatchStage {
+  let active: MatchStage = "round-of-32";
+  for (const { stage } of COLUMN_STAGES) {
+    const start = ROUND_START_MS[stage];
+    if (start != null && now >= start) active = stage;
+  }
+  return active;
+}
+
+const COLUMN_WIDTH = 230;
+const CONNECTOR_WIDTH = 22;
 
 function formatKickoff(iso: string | null): string {
   if (!iso) return "";
@@ -72,8 +98,9 @@ interface SelectedTeam {
 
 export function KnockoutBracket() {
   const [open, setOpen] = useState(false);
-  const [activeStage, setActiveStage] = useState<MatchStage>("round-of-32");
   const [selected, setSelected] = useState<SelectedTeam | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const didAutoScroll = useRef(false);
   const { adminResults, participants } = useScoredParticipants();
 
   const { data } = useSWR<FixturesPayload>("/api/results/fixtures", fetcher, {
@@ -82,7 +109,6 @@ export function KnockoutBracket() {
     dedupingInterval: 15_000,
   });
 
-  // Mapa matchId → resultado (estado + marcador) desde la API
   const resultByMatchId = useMemo(() => {
     const map = new Map<number, { statusShort: string; score: { home: number | null; away: number | null } }>();
     const fixtures = sanitizeFixtures(data?.fixtures);
@@ -115,6 +141,51 @@ export function KnockoutBracket() {
     return m;
   }, [columns]);
 
+  // Orden de cada ronda alineado con los cruces reales: cada partido de la
+  // ronda siguiente define (vía sourceMatchIds) qué dos de la actual se
+  // cruzan, así las llaves unen a los equipos que de verdad se enfrentan.
+  const orderedByStage = useMemo(() => {
+    const out = new Map<MatchStage, BracketMatch[]>();
+    // La última ronda con cruces "hacia adelante" es semifinal → final
+    for (let i = COLUMN_STAGES.length - 1; i >= 0; i--) {
+      const stage = COLUMN_STAGES[i].stage;
+      const cur = matchesByStage.get(stage) || [];
+      const nextStage = NEXT_STAGE[stage];
+      const next = nextStage ? out.get(nextStage) || matchesByStage.get(nextStage) || [] : [];
+      if (next.length === 0) {
+        out.set(stage, [...cur].sort((a, b) => a.id - b.id));
+        continue;
+      }
+      const byId = new Map(cur.map((m) => [m.id, m]));
+      const orderedCur: BracketMatch[] = [];
+      const used = new Set<number>();
+      for (const n of next) {
+        for (const srcId of n.sourceMatchIds) {
+          const src = byId.get(srcId);
+          if (src && !used.has(srcId)) { orderedCur.push(src); used.add(srcId); }
+        }
+      }
+      for (const m of cur) if (!used.has(m.id)) orderedCur.push(m);
+      out.set(stage, orderedCur);
+    }
+    return out;
+  }, [matchesByStage]);
+
+  const activeStage = useMemo(() => activeStageForDate(Date.now()), []);
+
+  // Auto-scroll a la ronda activa al abrir
+  useEffect(() => {
+    if (!open || didAutoScroll.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const idx = COLUMN_STAGES.findIndex((c) => c.stage === activeStage);
+    if (idx <= 0) { didAutoScroll.current = true; return; }
+    // Desplazar para dejar la ronda activa cerca del inicio visible
+    const target = idx * (COLUMN_WIDTH + CONNECTOR_WIDTH);
+    el.scrollTo({ left: target, behavior: "smooth" });
+    didAutoScroll.current = true;
+  }, [open, activeStage]);
+
   const advancement = useMemo(() => {
     if (!selected) return null;
     return poolsAdvancingTeam(participants, selected.team, selected.stage);
@@ -124,37 +195,6 @@ export function KnockoutBracket() {
     if (isPlaceholderTeam(team)) return;
     setSelected((cur) => (cur && cur.team === team && cur.matchId === matchId ? null : { team, stage, matchId }));
   };
-
-  const rawCurrent = matchesByStage.get(activeStage) || [];
-  const nextStage = NEXT_STAGE[activeStage];
-  const rawNext = nextStage ? matchesByStage.get(nextStage) || [] : [];
-
-  // Ordenar para que las llaves del bracket sean correctas: cada partido de
-  // la ronda SIGUIENTE define (vía sourceMatchIds) qué dos partidos de la
-  // ronda actual se cruzan. Reordenamos la ronda actual en pares consecutivos
-  // según ese cruce real, y dejamos la siguiente en ese mismo orden — así la
-  // llave une visualmente a los equipos que de verdad se enfrentan.
-  const { currentMatches, nextMatches } = useMemo(() => {
-    if (rawNext.length === 0) {
-      return { currentMatches: [...rawCurrent].sort((a, b) => a.id - b.id), nextMatches: rawNext };
-    }
-    const byId = new Map(rawCurrent.map((m) => [m.id, m]));
-    const orderedNext = [...rawNext].sort((a, b) => a.id - b.id);
-    const orderedCurrent: BracketMatch[] = [];
-    const used = new Set<number>();
-    for (const next of orderedNext) {
-      for (const srcId of next.sourceMatchIds) {
-        const src = byId.get(srcId);
-        if (src && !used.has(srcId)) {
-          orderedCurrent.push(src);
-          used.add(srcId);
-        }
-      }
-    }
-    // Por si algún partido actual no quedó referenciado, añadirlo al final
-    for (const m of rawCurrent) if (!used.has(m.id)) orderedCurrent.push(m);
-    return { currentMatches: orderedCurrent, nextMatches: orderedNext };
-  }, [rawCurrent, rawNext]);
 
   return (
     <div className="card mb-3 !p-0 overflow-hidden animate-fade-in">
@@ -174,62 +214,58 @@ export function KnockoutBracket() {
 
       {open && (
         <div style={{ padding: "0 0 14px" }}>
-          {/* Pestañas de ronda */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ padding: "0 14px 8px" }}>
-            {ROUND_TABS.map((tab) => (
-              <button
-                key={tab.stage}
-                className={`pill ${activeStage === tab.stage ? "active" : ""}`}
-                onClick={() => { setActiveStage(tab.stage); setSelected(null); }}
-                style={{ whiteSpace: "nowrap" }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
           <p className="text-[10px] text-text-muted" style={{ padding: "0 14px 10px", margin: 0 }}>
-            Toca una selección para ver qué porras la tienen avanzando.
+            Desliza para recorrer el cuadro. Toca una selección para ver qué porras la tienen avanzando.
           </p>
 
-          {/* Bracket: ronda actual + ronda siguiente desplazada */}
-          {activeStage === "final" ? (
-            <FinalColumn matches={currentMatches} onTeamClick={handleTeamClick} selected={selected} />
-          ) : (
-            <div style={{ overflowX: "auto", padding: "0 14px" }}>
-              <div style={{ display: "flex", gap: 0, minWidth: "min-content", alignItems: "stretch" }}>
-                {/* Columna ronda actual */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 14, flexShrink: 0, width: 248 }}>
-                  {currentMatches.map((m) => (
-                    <BracketCard
-                      key={m.id}
-                      match={m}
-                      selectedTeam={selected?.matchId === m.id ? selected.team : null}
-                      onTeamClick={(t) => handleTeamClick(t, m.stage, m.id)}
-                    />
-                  ))}
-                </div>
+          <div ref={scrollRef} style={{ overflowX: "auto", padding: "0 14px 4px", WebkitOverflowScrolling: "touch" }}>
+            <div style={{ display: "flex", alignItems: "stretch", minWidth: "min-content" }}>
+              {COLUMN_STAGES.map((col, colIdx) => {
+                const stage = col.stage;
+                const matches = orderedByStage.get(stage) || [];
+                const isActive = stage === activeStage;
+                const nextStage = NEXT_STAGE[stage];
+                const showConnectors = !!nextStage && (orderedByStage.get(nextStage) || []).length > 0;
 
-                {/* Conectores + columna ronda siguiente (cada cruce centrado entre sus 2 orígenes) */}
-                {nextStage && nextMatches.length > 0 && (
-                  <div style={{ display: "flex", flexShrink: 0 }}>
-                    <Connectors pairCount={nextMatches.length} />
-                    <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", gap: 14, width: 248, flexShrink: 0 }}>
-                      {nextMatches.map((m) => (
-                        <BracketCard
-                          key={m.id}
-                          match={m}
-                          dimmed
-                          selectedTeam={selected?.matchId === m.id ? selected.team : null}
-                          onTeamClick={(t) => handleTeamClick(t, m.stage, m.id)}
-                        />
-                      ))}
+                return (
+                  <div key={stage} style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+                    {/* Columna de la ronda */}
+                    <div style={{ width: COLUMN_WIDTH, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+                      <div
+                        className="text-[10px] font-bold uppercase tracking-wider"
+                        style={{ color: isActive ? "#C99625" : "rgb(var(--text-faint))", padding: "0 2px 8px", textAlign: "center" }}
+                      >
+                        {col.label}
+                        {isActive && <span style={{ marginLeft: 5, fontSize: 8 }}>● EN CURSO</span>}
+                      </div>
+                      {stage === "final" ? (
+                        <FinalColumnInline matches={matches} selected={selected} onTeamClick={handleTeamClick} />
+                      ) : (
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", gap: 12 }}>
+                          {matches.map((m) => (
+                            <BracketCard
+                              key={m.id}
+                              match={m}
+                              dimmed={!isActive}
+                              selectedTeam={selected?.matchId === m.id ? selected.team : null}
+                              onTeamClick={(t) => handleTeamClick(t, m.stage, m.id)}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
+
+                    {/* Conectores hacia la ronda siguiente */}
+                    {showConnectors && colIdx < COLUMN_STAGES.length - 1 && (
+                      <div style={{ width: CONNECTOR_WIDTH, flexShrink: 0, display: "flex", flexDirection: "column", paddingTop: 22 }}>
+                        <Connectors pairCount={(orderedByStage.get(nextStage!) || []).length} />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })}
             </div>
-          )}
+          </div>
 
           {selected && advancement && (
             <div style={{ padding: "0 14px" }}>
@@ -239,6 +275,15 @@ export function KnockoutBracket() {
                 pools={advancement.pools}
                 onClose={() => setSelected(null)}
               />
+            </div>
+          )}
+          {selected && !advancement && (
+            <div style={{ padding: "0 14px" }}>
+              <div className="card !py-2.5 !px-3 mt-3" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <p className="text-[11px] text-text-muted" style={{ margin: 0 }}>
+                  Es la final: el campeón se gestiona en el podio, no como avance de ronda.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -251,13 +296,13 @@ export function KnockoutBracket() {
 // un partido de la ronda siguiente.
 function Connectors({ pairCount }: { pairCount: number }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", width: 18, flexShrink: 0 }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around" }}>
       {Array.from({ length: pairCount }).map((_, i) => (
         <div key={i} style={{ flex: 1, display: "flex", alignItems: "center", position: "relative" }}>
           <div
             style={{
-              width: 10,
-              height: "52%",
+              width: 11,
+              height: "50%",
               borderTop: "1.5px solid rgb(var(--border-default))",
               borderBottom: "1.5px solid rgb(var(--border-default))",
               borderRight: "1.5px solid rgb(var(--border-default))",
@@ -265,7 +310,7 @@ function Connectors({ pairCount }: { pairCount: number }) {
               borderBottomRightRadius: 8,
             }}
           />
-          <div style={{ width: 8, height: "1.5px", background: "rgb(var(--border-default))" }} />
+          <div style={{ flex: 1, height: "1.5px", background: "rgb(var(--border-default))" }} />
         </div>
       ))}
     </div>
@@ -304,17 +349,17 @@ function BracketCard({
       >
         {isPlaceholder ? (
           <>
-            <span style={{ width: 18, height: 18, borderRadius: "50%", background: "rgb(var(--bg-3))", flexShrink: 0 }} />
-            <span className="text-[11px] text-text-faint italic truncate" style={{ flex: 1 }}>{team}</span>
+            <span style={{ width: 17, height: 17, borderRadius: "50%", background: "rgb(var(--bg-3))", flexShrink: 0 }} />
+            <span className="text-[10px] text-text-faint italic truncate" style={{ flex: 1 }}>{team}</span>
           </>
         ) : (
           <>
             <Flag country={team} size="sm" />
-            <span className="text-[12px] text-text-primary truncate" style={{ flex: 1 }}>{team}</span>
+            <span className="text-[11px] text-text-primary truncate" style={{ flex: 1 }}>{team}</span>
           </>
         )}
         {typeof score === "number" && (
-          <span className="text-[12px] font-bold tabular-nums text-text-warm" style={{ flexShrink: 0 }}>{score}</span>
+          <span className="text-[11px] font-bold tabular-nums text-text-warm" style={{ flexShrink: 0 }}>{score}</span>
         )}
       </button>
     );
@@ -326,22 +371,21 @@ function BracketCard({
       style={{
         background: "rgb(var(--bg-2))",
         border: `1px solid ${isLive ? "rgba(220,38,38,0.4)" : "rgb(var(--border-subtle))"}`,
-        opacity: dimmed ? 0.92 : 1,
+        opacity: dimmed ? 0.85 : 1,
       }}
     >
-      {/* Cabecera: estadio + fecha */}
-      <div className="flex items-center gap-1.5" style={{ padding: "7px 8px 4px" }}>
-        <span style={{ width: 3, height: 12, borderRadius: 2, background: accent, flexShrink: 0 }} />
-        <span className="text-[10px] text-text-muted truncate" style={{ flex: 1 }}>{match.hostCity}</span>
+      <div className="flex items-center gap-1.5" style={{ padding: "6px 8px 3px" }}>
+        <span style={{ width: 3, height: 11, borderRadius: 2, background: accent, flexShrink: 0 }} />
+        <span className="text-[9px] text-text-muted truncate" style={{ flex: 1 }}>{match.hostCity}</span>
         {isLive ? (
-          <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase" style={{ color: "#ef4444" }}>
-            <span className="animate-pulse" style={{ width: 5, height: 5, borderRadius: "50%", background: "#ef4444" }} />
+          <span className="inline-flex items-center gap-1 text-[8px] font-bold uppercase" style={{ color: "#ef4444" }}>
+            <span className="animate-pulse" style={{ width: 4, height: 4, borderRadius: "50%", background: "#ef4444" }} />
             Vivo
           </span>
         ) : isFinished ? (
-          <span className="text-[9px] uppercase text-text-faint">Final</span>
+          <span className="text-[8px] uppercase text-text-faint">Final</span>
         ) : (
-          <span className="text-[9px] text-text-faint whitespace-nowrap">{formatKickoff(match.kickoff)}</span>
+          <span className="text-[8px] text-text-faint whitespace-nowrap">{formatKickoff(match.kickoff)}</span>
         )}
       </div>
       {side(match.homeTeam, match.homeIsPlaceholder, match.score.home)}
@@ -350,27 +394,24 @@ function BracketCard({
   );
 }
 
-// Columna final: Final (con trofeo) + 3.er puesto
-function FinalColumn({
+// Columna final inline: Final (con trofeo) + 3.er puesto
+function FinalColumnInline({
   matches,
-  onTeamClick,
   selected,
+  onTeamClick,
 }: {
   matches: BracketMatch[];
-  onTeamClick: (team: string, stage: MatchStage, matchId: number) => void;
   selected: SelectedTeam | null;
+  onTeamClick: (team: string, stage: MatchStage, matchId: number) => void;
 }) {
-  const final = matches.find((m) => m.stage === "final");
-  // El 3.er puesto vive en otra "stage"; lo recuperamos del schedule completo
-  const third = WORLD_CUP_MATCHES.find((m) => m.stage === "third-place");
-
+  const final = matches.find((m) => m.stage === "final") || matches[0];
   return (
-    <div style={{ padding: "0 14px", display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 12 }}>
       {final && (
         <div>
-          <div className="flex items-center justify-center gap-1.5 mb-2">
-            <Trophy size={15} style={{ color: "#C99625" }} />
-            <span className="text-[12px] font-bold uppercase tracking-wider text-gold">Gran Final</span>
+          <div className="flex items-center justify-center gap-1.5 mb-1.5">
+            <Trophy size={13} style={{ color: "#C99625" }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gold">Gran Final</span>
           </div>
           <BracketCard
             match={final}
@@ -379,19 +420,15 @@ function FinalColumn({
           />
         </div>
       )}
-      {third && (
-        <div>
-          <div className="flex items-center justify-center gap-1.5 mb-2">
-            <Medal size={14} style={{ color: "#CD7F32" }} />
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "#CD7F32" }}>Tercer puesto</span>
-          </div>
-          <div className="rounded-xl" style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))", padding: "8px" }}>
-            <p className="text-[10px] text-text-muted text-center" style={{ margin: 0 }}>
-              Perdedores de semifinales
-            </p>
-          </div>
+      <div>
+        <div className="flex items-center justify-center gap-1.5 mb-1.5">
+          <Medal size={12} style={{ color: "#CD7F32" }} />
+          <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "#CD7F32" }}>3.er puesto</span>
         </div>
-      )}
+        <div className="rounded-xl" style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))", padding: "8px" }}>
+          <p className="text-[9px] text-text-muted text-center" style={{ margin: 0 }}>Perdedores de semifinales</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -408,7 +445,6 @@ function AdvancementPanel({
   onClose: () => void;
 }) {
   const withPick = pools.filter((p) => p.picked);
-
   return (
     <div className="card !py-3 !px-3 mt-3 animate-fade-in" style={{ border: "1px solid rgba(201,150,37,0.3)" }}>
       <div className="flex items-center gap-2 mb-2">
