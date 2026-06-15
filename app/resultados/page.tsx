@@ -733,6 +733,9 @@ function MatchOverlay({
   // Task 2: el partido inaugural (id 1, México - Sudáfrica) muestra además el
   // pick especial "Minuto Primer Gol" de cada porra junto al marcador previsto.
   const isInaugural = match.id === 1;
+  // El primer partido de España (id 14, España - Cabo Verde) muestra además el
+  // pick especial "Primer Goleador Español" de cada porra.
+  const isSpainOpener = match.id === 14;
 
   const rows = useMemo(() => {
     if (!ref) return [];
@@ -935,6 +938,12 @@ function MatchOverlay({
                         team.specials.minutoPrimerGol > 0
                           ? `${team.specials.minutoPrimerGol}'`
                           : "—"}
+                      </span>
+                    )}
+                    {isSpainOpener && (
+                      <span className="text-[9px] font-semibold text-text-muted whitespace-nowrap">
+                        1.<sup>er</sup> goleador ESP:{" "}
+                        {team.specials?.primerGolEsp ? team.specials.primerGolEsp : "—"}
                       </span>
                     )}
                   </div>
