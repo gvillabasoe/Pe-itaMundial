@@ -36,8 +36,8 @@ const fetcher = async (url: string): Promise<FixturesPayload> => {
 const MATCH_BY_ID = new Map(WORLD_CUP_MATCHES.map((m) => [String(m.id), m]));
 const LIVE_AND_DONE = new Set<string>([...FINISHED_STATUSES, ...IN_PLAY_STATUSES]);
 
-export function LiveGroupTables() {
-  const [open, setOpen] = useState(false);
+export function LiveGroupTables({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
+  const [open, setOpen] = useState(defaultOpen);
   const [group, setGroup] = useState<string>("A");
 
   const { data } = useSWR<FixturesPayload>("/api/results/fixtures", fetcher, {

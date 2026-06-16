@@ -32,8 +32,8 @@ interface ScorerRow {
   backedBy: string[]; // nombres de porras que lo eligieron como máximo goleador
 }
 
-export function TopScorers() {
-  const [open, setOpen] = useState(false);
+export function TopScorers({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
+  const [open, setOpen] = useState(defaultOpen);
   const { participants } = useScoredParticipants();
 
   const { data } = useSWR<FixturesPayload>("/api/results/fixtures", fetcher, {

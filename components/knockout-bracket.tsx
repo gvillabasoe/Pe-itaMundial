@@ -96,8 +96,8 @@ interface SelectedTeam {
   matchId: number;
 }
 
-export function KnockoutBracket() {
-  const [open, setOpen] = useState(false);
+export function KnockoutBracket({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
+  const [open, setOpen] = useState(defaultOpen);
   const [selected, setSelected] = useState<SelectedTeam | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const didAutoScroll = useRef(false);

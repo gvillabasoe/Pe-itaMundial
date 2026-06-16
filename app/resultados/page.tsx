@@ -303,6 +303,8 @@ export default function ResultadosPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<MatchStage | "all">("all");
   const [quickFilter, setQuickFilter] = useState<"none" | "live" | "today">("none");
+  // Sub-pestañas de Resultados: partidos (por defecto), tablas, cuadro, goleadores
+  const [resultsTab, setResultsTab] = useState<"partidos" | "tablas" | "cuadro" | "goleadores">("partidos");
   const [zoneFilter, setZoneFilter] = useState<Zone | "all">("all");
   const [openSection, setOpenSection] = useState<string | null>("group-1");
   const liveMatchRef = useRef<HTMLDivElement | null>(null);
@@ -361,17 +363,34 @@ export default function ResultadosPage() {
     return liveMatch.stage;
   }, [liveMatch]);
 
-  // Al cargar, si hay un partido en vivo, abre su sección y desplázate a él.
-  // Solo una vez por carga (no reabrir si el usuario navega luego).
+  // Sección que contiene algún partido de HOY (zona Madrid), para abrirla por
+  // defecto cuando no hay ningún partido en vivo.
+  const todaySectionKey = useMemo(() => {
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const isToday = (iso: string) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso)) === today;
+    const m = merged.find((x) => isToday(x.kickoff));
+    if (!m) return null;
+    return m.stage === "group" ? `group-${m.matchday}` : m.stage;
+  }, [merged]);
+
+  // Al cargar: si hay partido en vivo, abre su sección y desplázate a él.
+  // Si no, abre la sección con partidos de hoy. Solo una vez por carga.
   useEffect(() => {
-    if (didLiveScroll.current || !liveMatch || !liveSectionKey) return;
-    setOpenSection(liveSectionKey);
-    didLiveScroll.current = true;
-    const t = setTimeout(() => {
-      liveMatchRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 220);
-    return () => clearTimeout(t);
-  }, [liveMatch, liveSectionKey]);
+    if (didLiveScroll.current) return;
+    if (liveMatch && liveSectionKey) {
+      setOpenSection(liveSectionKey);
+      didLiveScroll.current = true;
+      const t = setTimeout(() => {
+        liveMatchRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 220);
+      return () => clearTimeout(t);
+    }
+    if (todaySectionKey) {
+      setOpenSection(todaySectionKey);
+      didLiveScroll.current = true;
+    }
+  }, [liveMatch, liveSectionKey, todaySectionKey]);
 
   // Nº de partidos en vivo / hoy para los badges del filtro rápido
   const { liveCount, todayCount } = useMemo(() => {
@@ -473,15 +492,37 @@ export default function ResultadosPage() {
         </div>
       )}
 
-      {/* Tablas de grupo en vivo (criterios FIFA, plegable) */}
-      <LiveGroupTables />
+      {/* Sub-pestañas: Partidos · Tablas · Cuadro · Goleadores */}
+      <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+        {([
+          ["partidos", "Partidos"],
+          ["tablas", "Tablas"],
+          ["cuadro", "Cuadro"],
+          ["goleadores", "Goleadores"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            className={`pill ${resultsTab === key ? "active" : ""}`}
+            onClick={() => setResultsTab(key)}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            {label}
+            {key === "partidos" && liveCount > 0 && (
+              <span
+                className="animate-pulse"
+                style={{ marginLeft: 5, display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#ef4444", verticalAlign: "middle" }}
+              />
+            )}
+          </button>
+        ))}
+      </div>
 
-      {/* Cuadro de la fase final (bracket, plegable) */}
-      <KnockoutBracket />
+      {resultsTab === "tablas" && <LiveGroupTables defaultOpen />}
+      {resultsTab === "cuadro" && <KnockoutBracket defaultOpen />}
+      {resultsTab === "goleadores" && <TopScorers defaultOpen />}
 
-      {/* Carrera por la Bota de Oro (pichichi, plegable) */}
-      <TopScorers />
-
+      {resultsTab === "partidos" && (
+      <>
       {/* Buscador */}
       <div className="relative mb-3">
         <Search
@@ -617,6 +658,8 @@ export default function ResultadosPage() {
             </section>
           );
         })
+      )}
+      </>
       )}
 
       {selectedMatch && (
