@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Activity, BookOpen, ChevronRight, Crown, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, BookOpen, ChevronRight, Crown, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
 import { Countdown, MatchupWithFlags, SectionTitle } from "@/components/ui";
 import { ACTIVITY, SCORING } from "@/lib/data";
 import {
@@ -187,6 +187,13 @@ const QUICK_LINKS = [
     label: "Resultados",
     icon: Trophy,
     color: "#D4AF37",
+    cardStyle: {},
+  },
+  {
+    href: "/clasificacion",
+    label: "Ranking",
+    icon: BarChart3,
+    color: "#B58A1B",
     cardStyle: {},
   },
   {
