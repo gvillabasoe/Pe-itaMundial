@@ -57,6 +57,30 @@ const userTeamsFetcher = async (url: string): Promise<UserTeamsStore> => {
   return sanitizeUserTeamsStore(payload);
 };
 
+// Fetcher propio para /api/auth/avatars. NO se puede reutilizar adminFetcher:
+// ese pasa la respuesta por sanitizeAdminResults(), que reconstruye un objeto
+// AdminResults limpio y descarta la clave `avatars`. Aquí devolvemos el mapa
+// { userId: avatarUrl } tal cual lo manda el endpoint.
+type AvatarsPayload = { avatars: Record<string, string> };
+const avatarsFetcher = async (url: string): Promise<AvatarsPayload> => {
+  const response = await fetch(url, { cache: "no-store" });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error("No se han podido cargar las fotos de perfil.");
+  }
+  const avatars =
+    payload && typeof payload === "object" && payload.avatars && typeof payload.avatars === "object"
+      ? (payload.avatars as Record<string, string>)
+      : {};
+  return { avatars };
+};
+
+// Inyecta la foto de perfil del dueño en cada participante (por userId).
+function applyAvatars(list: Team[], avatars: Record<string, string> | null | undefined): Team[] {
+  if (!avatars) return list;
+  return list.map((p) => (avatars[p.userId] ? { ...p, avatarUrl: avatars[p.userId] } : p));
+}
+
 export function notifyAdminResultsUpdated() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(ADMIN_RESULTS_EVENT));
@@ -110,9 +134,9 @@ export function useScoredParticipants() {
   const userTeams = useUserTeamsStore();
 
   // Mapa userId → avatarUrl, para mostrar la foto de cada participante.
-  const { data: avatarsData } = useSWR<{ avatars: Record<string, string> }>(
+  const { data: avatarsData } = useSWR<AvatarsPayload>(
     "/api/auth/avatars",
-    adminFetcher as unknown as (url: string) => Promise<{ avatars: Record<string, string> }>,
+    avatarsFetcher,
     { revalidateOnFocus: true, dedupingInterval: 30_000, onErrorRetry: limitedRetry }
   );
 
@@ -126,6 +150,7 @@ export function useScoredParticipants() {
   }, [mutate]);
 
   const adminResults = useMemo(() => sanitizeAdminResults(data), [data]);
+  const avatarsById = useMemo(() => avatarsData?.avatars ?? null, [avatarsData]);
   const sourceParticipants = useMemo<Team[]>(() => {
     if (hasRealUserTeams(userTeams.store)) {
       return userTeams.store.entries;
@@ -134,14 +159,12 @@ export function useScoredParticipants() {
   }, [userTeams.store]);
   const participants = useMemo<Team[]>(() => {
     const scored = scoreParticipants(sourceParticipants, adminResults);
-    const avatars = avatarsData?.avatars;
-    if (!avatars) return scored;
-    // Inyecta la foto de perfil del dueño en cada participante (por userId)
-    return scored.map((p) => (avatars[p.userId] ? { ...p, avatarUrl: avatars[p.userId] } : p));
-  }, [sourceParticipants, adminResults, avatarsData]);
+    return applyAvatars(scored, avatarsById);
+  }, [sourceParticipants, adminResults, avatarsById]);
 
   return {
     adminResults,
+    avatarsById,
     participants,
     isLoading: isLoading || userTeams.isLoading,
     error: error || userTeams.error,
@@ -215,9 +238,12 @@ export function useLiveScoredParticipants() {
     }
     return {
       liveMatchCount: inPlay,
-      provisionalParticipants: scoreParticipants(sourceParticipants, merged),
+      provisionalParticipants: applyAvatars(
+        scoreParticipants(sourceParticipants, merged),
+        base.avatarsById
+      ),
     };
-  }, [fixturesPayload, base.adminResults, sourceParticipants]);
+  }, [fixturesPayload, base.adminResults, sourceParticipants, base.avatarsById]);
 
   return {
     ...base,
