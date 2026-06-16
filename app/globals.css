@@ -228,6 +228,16 @@ body {
     border-color: rgba(var(--gold), 0.3);
     font-weight: 600;
   }
+  .pill.active.pill-copa {
+    background: rgb(var(--accent-copa) / 0.12);
+    color: rgb(var(--accent-copa));
+    border-color: rgb(var(--accent-copa) / 0.35);
+  }
+  .pill.active.pill-club {
+    background: rgb(var(--accent-participante) / 0.12);
+    color: rgb(var(--accent-participante));
+    border-color: rgb(var(--accent-participante) / 0.35);
+  }
 
   .nav-bottom {
     @apply fixed bottom-0 left-0 right-0 z-50 flex justify-around;

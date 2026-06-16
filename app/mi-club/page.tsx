@@ -322,7 +322,7 @@ function PrivateZone({
       <div className="card mb-3 animate-fade-in">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <AvatarUploader name={activeTeam?.name || user.username} size={52} />
+            <AvatarUploader name={activeTeam?.name || user.username} size={64} />
             <div className="min-w-0">
               <p className="text-[10px] text-text-muted leading-tight">Usuario</p>
               <UserBadge
@@ -351,7 +351,7 @@ function PrivateZone({
         <div className="mb-3 flex gap-1.5 overflow-x-auto">
           {userTeams.map((team) => (
             <button key={team.id}
-              className={`pill ${activeTeamId === team.id ? "active" : ""}`}
+              className={`pill pill-club ${activeTeamId === team.id ? "active" : ""}`}
               onClick={() => onSelectTeam(team.id)}>
               {team.name}
             </button>
@@ -396,7 +396,7 @@ function PrivateZone({
           {/* Tabs */}
           <div className="mb-2 flex gap-1.5 overflow-x-auto">
             {(["resumen", "partidos", "grupos", "eliminatorias", "especiales"] as const).map((tab) => (
-              <button key={tab} className={`pill capitalize ${activeTab === tab ? "active" : ""}`}
+              <button key={tab} className={`pill pill-club capitalize ${activeTab === tab ? "active" : ""}`}
                 onClick={() => setActiveTab(tab)}>{tab}</button>
             ))}
           </div>

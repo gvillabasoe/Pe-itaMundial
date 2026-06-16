@@ -207,8 +207,8 @@ const QUICK_LINKS = [
     href: "/mi-club",
     label: "Mi Club",
     icon: Shield,
-    color: "#6BBF78",
-    cardStyle: {},
+    color: "#3F9D4E",
+    cardStyle: { borderColor: "rgba(63,157,78,0.18)", background: "linear-gradient(135deg, rgba(63,157,78,0.09), rgba(255,255,255,0.02))" },
   },
   {
     href: "/versus",

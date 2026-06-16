@@ -143,7 +143,7 @@ export default function CopaPage() {
         <>
           <div className="flex gap-2 mb-4 overflow-x-auto">
             {TABS.map((t) => (
-              <button key={t.key} className={`pill whitespace-nowrap ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
+              <button key={t.key} className={`pill pill-copa whitespace-nowrap ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
                 {t.label}
               </button>
             ))}
@@ -244,7 +244,7 @@ export default function CopaPage() {
             <div>
               <div className="flex gap-2 mb-3 overflow-x-auto">
                 {JORNADAS.map((j) => (
-                  <button key={j.key} className={`pill whitespace-nowrap ${jornada === j.key ? "active" : ""}`} onClick={() => setJornada(j.key)}>
+                  <button key={j.key} className={`pill pill-copa whitespace-nowrap ${jornada === j.key ? "active" : ""}`} onClick={() => setJornada(j.key)}>
                     {j.label}
                     {isLive(j.key) && <span className="ml-1.5 inline-block animate-pulse align-middle" style={{ width: 6, height: 6, borderRadius: "50%", background: "rgb(var(--danger))" }} />}
                   </button>
