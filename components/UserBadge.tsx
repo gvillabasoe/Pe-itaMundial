@@ -29,8 +29,8 @@ export function UserBadge({
   const text = (label ?? "").trim();
 
   return (
-    <span className={`inline-flex items-center gap-1.5 ${className}`}>
-      <span className="truncate">{username}</span>
+    <span className={`inline-flex items-center gap-1 min-w-0 max-w-full ${className}`}>
+      <span className="truncate min-w-0">{username}</span>
       {text ? (
         <span
           title={text}
@@ -43,8 +43,11 @@ export function UserBadge({
             borderColor: "rgba(var(--gold), 0.38)",
           }}
           className={
-            "inline-flex items-center rounded-full border px-2 py-0.5 " +
-            "text-[9px] font-bold uppercase tracking-wide leading-none " +
+            // flex-shrink-0: el chip nunca se encoge; quien cede espacio es
+            // el nombre (truncate). Así el bloque respeta su columna y no se
+            // solapa con los puntos del ranking.
+            "inline-flex flex-shrink-0 items-center rounded-full border px-1.5 py-px " +
+            "text-[8px] font-bold uppercase tracking-wide leading-none " +
             "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] whitespace-nowrap " +
             chipClassName
           }
