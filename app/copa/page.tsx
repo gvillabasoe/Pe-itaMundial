@@ -222,21 +222,21 @@ function BracketCard({
   name: (id?: string) => string;
   avatar: (id?: string) => string | null;
 }) {
-  const Side = ({ id, ref, goals }: { id?: string; ref: string; goals?: number | null }) => {
+  const Side = ({ id, slot, goals }: { id?: string; slot: string; goals?: number | null }) => {
     const isWinner = Boolean(m.winnerId) && m.winnerId === id;
     return (
       <div className={`flex items-center gap-1.5 ${isWinner ? "font-bold text-gold" : ""}`}>
         {id ? <InitialsAvatar name={name(id)} size={18} avatarUrl={avatar(id)} /> : null}
-        <span className="flex-1 truncate text-xs">{id ? name(id) : (m.ronda === "R32" ? refLabel(ref) : "Por definir")}</span>
+        <span className="flex-1 truncate text-xs">{id ? name(id) : (m.ronda === "R32" ? refLabel(slot) : "Por definir")}</span>
         <span className="text-xs tabular-nums">{goals === null || goals === undefined ? "" : goals}</span>
       </div>
     );
   };
   return (
     <div className="card space-y-1 px-2 py-1.5">
-      <Side id={m.homeId} ref={m.homeRef} goals={m.homeGoals} />
+      <Side id={m.homeId} slot={m.homeRef} goals={m.homeGoals} />
       <div className="h-px bg-border-subtle" />
-      <Side id={m.awayId} ref={m.awayRef} goals={m.awayGoals} />
+      <Side id={m.awayId} slot={m.awayRef} goals={m.awayGoals} />
     </div>
   );
 }
