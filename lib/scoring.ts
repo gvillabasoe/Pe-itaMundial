@@ -633,3 +633,8 @@ export function getActiveWindows(adminResults: AdminResults): Record<Ventana, bo
     FINAL: finalStarted,
   };
 }
+
+// MODO COPA — puntos por posición de grupo de una porra (para el detalle de J3).
+export function scoreGroupPositionPoints(team: Team, adminResults: AdminResults): number {
+  return scoreGroupPositions(team, adminResults);
+}

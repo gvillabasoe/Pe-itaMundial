@@ -6,7 +6,7 @@ import { Crown, Trophy, X } from "lucide-react";
 import { FIXTURES, GROUP_COLORS, type Team } from "@/lib/data";
 import { useAuth } from "@/components/auth-provider";
 import { EmptyState, Flag, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
-import { scoreMatchPickAgainstAdmin, type MatchPickPointStatus } from "@/lib/scoring";
+import { scoreGroupPositionPoints, scoreMatchPickAgainstAdmin, type MatchPickPointStatus } from "@/lib/scoring";
 import type { AdminResults } from "@/lib/admin-results";
 import { GROUP_LABELS } from "@/lib/cup/template";
 import { useCup } from "@/lib/cup/use-cup";
@@ -21,6 +21,17 @@ function groupColor(label: string): string {
 
 const ACCENT = "rgb(var(--accent-participante))";
 const ACCENT_BG = "rgba(63,157,78,0.06)";
+
+function MineTag() {
+  return (
+    <span
+      className="flex-shrink-0 rounded px-1 py-px text-[8px] font-black uppercase leading-none"
+      style={{ background: "rgba(63,157,78,0.16)", color: ACCENT }}
+    >
+      Tú
+    </span>
+  );
+}
 
 const TABS = [
   { key: "grupos", label: "Grupos" },
@@ -62,14 +73,17 @@ export default function CopaPage() {
     return Boolean(t && (t.userId === user.id || t.username === user.username));
   };
 
-  function TeamCell({ id, size = 26 }: { id?: string; size?: number }) {
+  function TeamCell({ id, size = 24 }: { id?: string; size?: number }) {
     const mine = isMine(id);
     return (
-      <span className="inline-flex items-center gap-2 min-w-0">
-        <InitialsAvatar name={name(id)} size={size} avatarUrl={avatar(id)} />
-        <span className={`truncate text-sm ${mine ? "font-bold" : ""}`} style={mine ? { color: ACCENT } : undefined}>
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="flex-shrink-0">
+          <InitialsAvatar name={name(id)} size={size} avatarUrl={avatar(id)} />
+        </span>
+        <span className={`truncate text-sm min-w-0 ${mine ? "font-bold" : ""}`} style={mine ? { color: ACCENT } : undefined}>
           {name(id)}
         </span>
+        {mine && <MineTag />}
       </span>
     );
   }
@@ -169,7 +183,7 @@ export default function CopaPage() {
                                 {sc && <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 2, background: sc }} />}
                                 <span className="text-sm font-bold" style={{ color: sc ?? undefined }}>{i + 1}</span>
                               </td>
-                              <td className="py-2 pl-1"><TeamCell id={r.teamId} size={24} /></td>
+                              <td className="py-2 pl-1 overflow-hidden"><TeamCell id={r.teamId} size={24} /></td>
                               <td className="py-2 text-center text-sm text-text-muted">{r.pj}</td>
                               <td className="py-2 text-center text-sm">{r.gf}</td>
                               <td className="py-2 text-center text-sm">{r.gc}</td>
@@ -223,7 +237,8 @@ export default function CopaPage() {
                             {label}
                           </span>
                           <div className="flex flex-1 items-center justify-end gap-2 min-w-0">
-                            <span className={`truncate text-sm ${isMine(fx.homeId) ? "font-bold" : ""}`} style={isMine(fx.homeId) ? { color: ACCENT } : undefined}>{name(fx.homeId)}</span>
+                            <span className={`truncate text-sm min-w-0 ${isMine(fx.homeId) ? "font-bold" : ""}`} style={isMine(fx.homeId) ? { color: ACCENT } : undefined}>{name(fx.homeId)}</span>
+                            {isMine(fx.homeId) && <MineTag />}
                             <InitialsAvatar name={name(fx.homeId)} size={22} avatarUrl={avatar(fx.homeId)} />
                           </div>
                           <span className="flex-shrink-0 font-display rounded-lg bg-bg-2 px-2.5 py-1 text-sm font-bold tabular-nums">
@@ -231,7 +246,8 @@ export default function CopaPage() {
                           </span>
                           <div className="flex flex-1 items-center gap-2 min-w-0">
                             <InitialsAvatar name={name(fx.awayId)} size={22} avatarUrl={avatar(fx.awayId)} />
-                            <span className={`truncate text-sm ${isMine(fx.awayId) ? "font-bold" : ""}`} style={isMine(fx.awayId) ? { color: ACCENT } : undefined}>{name(fx.awayId)}</span>
+                            {isMine(fx.awayId) && <MineTag />}
+                            <span className={`truncate text-sm min-w-0 ${isMine(fx.awayId) ? "font-bold" : ""}`} style={isMine(fx.awayId) ? { color: ACCENT } : undefined}>{name(fx.awayId)}</span>
                           </div>
                         </button>
                       );
@@ -493,6 +509,26 @@ function CalendarDetail({
             );
           })}
         </div>
+
+        {ventana === "J3" && (
+          <div className="card !py-2.5 !px-3 mt-2">
+            <div className="mb-2 text-center text-[12px] font-semibold text-text-primary">Posición de grupo</div>
+            <div className="flex items-center gap-2">
+              <div className="flex flex-1 items-center justify-end gap-1.5">
+                <span className="font-display text-sm font-bold tabular-nums rounded-lg bg-bg-2 px-2 py-0.5">
+                  +{home ? scoreGroupPositionPoints(home, adminResults) : 0}
+                </span>
+              </div>
+              <span className="flex-shrink-0 text-[10px] text-text-faint">vs</span>
+              <div className="flex flex-1 items-center gap-1.5">
+                <span className="font-display text-sm font-bold tabular-nums rounded-lg bg-bg-2 px-2 py-0.5">
+                  +{away ? scoreGroupPositionPoints(away, adminResults) : 0}
+                </span>
+              </div>
+            </div>
+            <p className="mt-1.5 text-center text-[10px] text-text-faint">Acierto de la posición final de cada selección en su grupo.</p>
+          </div>
+        )}
       </div>
     </div>,
     document.body
