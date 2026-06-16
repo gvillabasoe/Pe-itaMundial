@@ -237,7 +237,7 @@ function ParticipantRow({ participant, liveDelta, isMine, isFavorite, onToggleFa
             </span>
           )}
         </div>
-        <InitialsAvatar name={participant.name} size={36} avatarUrl={participant.avatarUrl} />
+        <InitialsAvatar name={participant.name} size={44} avatarUrl={participant.avatarUrl} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-text-primary truncate">{participant.name}</p>
           <UserBadge username={<span className="text-[10px] text-text-muted">@{participant.username}</span>} label={participant.label} />
@@ -347,7 +347,7 @@ function ParticipantDetail({ team, onClose }: { team: Team; onClose: () => void 
     <div>
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <InitialsAvatar name={team.name} size={44} avatarUrl={team.avatarUrl} />
+          <InitialsAvatar name={team.name} size={56} avatarUrl={team.avatarUrl} />
           <div>
             <h3 className="font-display text-xl font-black tracking-tight text-text-warm">{team.name}</h3>
             <UserBadge username={<span className="text-xs text-text-muted mt-0.5">@{team.username}</span>} label={team.label} />
