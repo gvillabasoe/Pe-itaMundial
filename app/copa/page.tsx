@@ -118,6 +118,14 @@ export default function CopaPage() {
               {GROUP_LABELS.map((label) => {
                 const rows = groups.standings[label] || [];
                 const color = groupColor(label);
+                const size = rows.length;
+                // Estado por puesto: 1-2 clasifican (verde), 3 mejor tercero
+                // (ámbar, depende de otros grupos) salvo grupo de 3 (rojo), 4 eliminado (rojo).
+                const statusColor = (idx: number): string | null => {
+                  if (idx < 2) return "rgb(var(--accent-participante))";
+                  if (idx === 2) return size >= 4 ? "rgb(var(--amber))" : "rgb(var(--danger))";
+                  return "rgb(var(--danger))";
+                };
                 return (
                   <div key={label} className="card !p-0 overflow-hidden animate-fade-in">
                     <div className="flex items-center gap-2 px-3.5 py-2.5" style={{ background: `${color}1A`, borderBottom: `1px solid ${color}33` }}>
@@ -126,37 +134,47 @@ export default function CopaPage() {
                       </span>
                       <span className="font-display text-sm font-bold" style={{ color }}>Grupo {label}</span>
                     </div>
-                    <table className="w-full">
+                    <table className="w-full" style={{ tableLayout: "fixed" }}>
+                      <colgroup>
+                        <col style={{ width: 30 }} />
+                        <col />
+                        <col style={{ width: 32 }} />
+                        <col style={{ width: 34 }} />
+                        <col style={{ width: 34 }} />
+                        <col style={{ width: 38 }} />
+                        <col style={{ width: 42 }} />
+                      </colgroup>
                       <thead>
                         <tr className="text-[9px] uppercase tracking-wide text-text-faint">
-                          <th className="px-2 py-1.5 text-left font-semibold">#</th>
-                          <th className="px-2 py-1.5 text-left font-semibold">Porra</th>
-                          <th className="px-1 py-1.5 text-center font-semibold">PJ</th>
-                          <th className="px-1 py-1.5 text-center font-semibold">GF</th>
-                          <th className="px-1 py-1.5 text-center font-semibold">GC</th>
-                          <th className="px-1 py-1.5 text-center font-semibold">DG</th>
-                          <th className="px-2.5 py-1.5 text-center font-semibold">Pts</th>
+                          <th className="py-1.5 text-center font-semibold">#</th>
+                          <th className="py-1.5 pl-1 text-left font-semibold">Porra</th>
+                          <th className="py-1.5 text-center font-semibold">PJ</th>
+                          <th className="py-1.5 text-center font-semibold">GF</th>
+                          <th className="py-1.5 text-center font-semibold">GC</th>
+                          <th className="py-1.5 text-center font-semibold">DG</th>
+                          <th className="py-1.5 text-center font-semibold">PTS</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.map((r, i) => {
                           const mine = isMine(r.teamId);
+                          const sc = statusColor(i);
                           return (
                             <tr
                               key={r.teamId}
                               className="border-t border-border-subtle"
-                              style={{
-                                borderLeft: mine ? `3px solid ${ACCENT}` : "3px solid transparent",
-                                background: mine ? ACCENT_BG : undefined,
-                              }}
+                              style={{ background: mine ? ACCENT_BG : undefined }}
                             >
-                              <td className="px-2 py-2 text-text-muted text-sm">{i + 1}</td>
-                              <td className="px-2 py-2"><TeamCell id={r.teamId} size={24} /></td>
-                              <td className="px-1 py-2 text-center text-sm text-text-muted">{r.pj}</td>
-                              <td className="px-1 py-2 text-center text-sm">{r.gf}</td>
-                              <td className="px-1 py-2 text-center text-sm">{r.gc}</td>
-                              <td className="px-1 py-2 text-center text-sm">{r.dg > 0 ? `+${r.dg}` : r.dg}</td>
-                              <td className="px-2.5 py-2 text-center text-sm font-black text-text-warm">{r.pts}</td>
+                              <td className="py-2 text-center" style={{ position: "relative" }}>
+                                {sc && <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 2, background: sc }} />}
+                                <span className="text-sm font-bold" style={{ color: sc ?? undefined }}>{i + 1}</span>
+                              </td>
+                              <td className="py-2 pl-1"><TeamCell id={r.teamId} size={24} /></td>
+                              <td className="py-2 text-center text-sm text-text-muted">{r.pj}</td>
+                              <td className="py-2 text-center text-sm">{r.gf}</td>
+                              <td className="py-2 text-center text-sm">{r.gc}</td>
+                              <td className="py-2 text-center text-sm">{r.dg > 0 ? `+${r.dg}` : r.dg}</td>
+                              <td className="py-2 text-center text-sm font-black text-text-warm">{r.pts}</td>
                             </tr>
                           );
                         })}
@@ -165,9 +183,14 @@ export default function CopaPage() {
                   </div>
                 );
               })}
-              <p className="px-1 text-[11px] text-text-muted">
-                Goles a favor = puntos de la porra en esas jornadas. Clasifican los 2 primeros de cada grupo y los 4 mejores terceros.
-              </p>
+              <div className="px-1 text-[11px] text-text-muted space-y-1">
+                <p>Goles a favor = puntos de la porra en esas jornadas.</p>
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: "rgb(var(--accent-participante))" }} /> Clasifican</span>
+                  <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: "rgb(var(--amber))" }} /> Mejor tercero</span>
+                  <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: "rgb(var(--danger))" }} /> Eliminado</span>
+                </p>
+              </div>
             </div>
           )}
 
@@ -448,21 +471,21 @@ function CalendarDetail({
             const pa = pickFor(away, f.id, f.group);
             return (
               <div key={f.id} className="card !py-2.5 !px-3">
-                <div className="mb-1.5 flex items-center justify-center gap-1.5 text-[11px] text-text-muted">
+                <div className="mb-2 flex items-center justify-center gap-2 text-[12px]">
+                  <span className="font-semibold text-text-primary">{f.homeTeam}</span>
                   <Flag country={f.homeTeam} size="sm" />
-                  <span className="font-semibold">{f.homeTeam}</span>
-                  <span>·</span>
-                  <span className="font-semibold">{f.awayTeam}</span>
+                  <span className="text-text-faint">-</span>
                   <Flag country={f.awayTeam} size="sm" />
+                  <span className="font-semibold text-text-primary">{f.awayTeam}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex flex-1 items-center justify-end gap-1.5 min-w-0">
                     <PickChip status={ph.status} points={ph.points} />
-                    <span className="font-display text-sm font-bold tabular-nums">{formatScorePick(ph.pick)}</span>
+                    <span className="font-display text-sm font-bold tabular-nums rounded-lg bg-bg-2 px-2 py-0.5">{formatScorePick(ph.pick)}</span>
                   </div>
                   <span className="flex-shrink-0 text-[10px] text-text-faint">vs</span>
                   <div className="flex flex-1 items-center gap-1.5 min-w-0">
-                    <span className="font-display text-sm font-bold tabular-nums">{formatScorePick(pa.pick)}</span>
+                    <span className="font-display text-sm font-bold tabular-nums rounded-lg bg-bg-2 px-2 py-0.5">{formatScorePick(pa.pick)}</span>
                     <PickChip status={pa.status} points={pa.points} />
                   </div>
                 </div>
