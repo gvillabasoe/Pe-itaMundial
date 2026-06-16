@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Crown, Trophy } from "lucide-react";
-import { GROUP_COLORS } from "@/lib/data";
-import { EmptyState, InitialsAvatar, Skeleton } from "@/components/ui";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { Crown, Trophy, X } from "lucide-react";
+import { FIXTURES, GROUP_COLORS, type Team } from "@/lib/data";
+import { EmptyState, Flag, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
+import { scoreMatchPickAgainstAdmin, type MatchPickPointStatus } from "@/lib/scoring";
+import type { AdminResults } from "@/lib/admin-results";
 import { GROUP_LABELS } from "@/lib/cup/template";
 import { useCup } from "@/lib/cup/use-cup";
 import type { BracketMatch } from "@/lib/cup/types";
 import type { Ventana } from "@/lib/scoring";
+import type { GoalsMap } from "@/lib/cup/groups";
 
-// Colores de grupo: los mismos que en Resultados (A..L) + dos para M y N.
 const EXTRA_GROUP_COLORS: Record<string, string> = { M: "#3F7D6B", N: "#9C5B8B" };
 function groupColor(label: string): string {
   return GROUP_COLORS[label] || EXTRA_GROUP_COLORS[label] || "#7A7A7A";
@@ -28,10 +31,20 @@ const JORNADAS: { key: Ventana; label: string }[] = [
   { key: "J3", label: "Jornada 3" },
 ];
 
+function jornadaNumber(v: Ventana): number {
+  return v === "J1" ? 1 : v === "J2" ? 2 : 3;
+}
+
+function formatScorePick(pick: { home: number | null; away: number | null } | null | undefined): string {
+  if (!pick || typeof pick.home !== "number" || typeof pick.away !== "number") return "—";
+  return `${pick.home} - ${pick.away}`;
+}
+
 export default function CopaPage() {
-  const { config, locked, groups, bracket, teamById, isLoading, mutateConfig } = useCup();
+  const { locked, groups, bracket, goals, teamById, adminResults, liveMatchCount, isLoading } = useCup();
   const [tab, setTab] = useState<TabKey>("grupos");
   const [jornada, setJornada] = useState<Ventana>("J1");
+  const [detail, setDetail] = useState<{ homeId?: string; awayId?: string; ventana: Ventana } | null>(null);
 
   const name = (id?: string) => (id ? teamById.get(id)?.name ?? "—" : "—");
   const avatar = (id?: string) => (id ? teamById.get(id)?.avatarUrl ?? null : null);
@@ -50,6 +63,14 @@ export default function CopaPage() {
       <header className="mb-4 flex items-center gap-2">
         <Crown size={22} className="text-gold" />
         <h1 className="font-display text-xl font-bold text-text-warm">Copa · Mundial entre porras</h1>
+        {liveMatchCount > 0 && (
+          <span
+            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+            style={{ background: "rgba(var(--danger), 0.12)", color: "rgb(var(--danger))" }}
+          >
+            ● En vivo
+          </span>
+        )}
       </header>
 
       {isLoading ? (
@@ -146,12 +167,18 @@ export default function CopaPage() {
                   </button>
                 ))}
               </div>
+              <p className="mb-2 px-1 text-[11px] text-text-muted">Toca un cruce para ver lo que puso cada porra en esa jornada.</p>
               <div className="space-y-2">
                 {GROUP_LABELS.flatMap((label) =>
                   (groups.fixtures[label] || [])
                     .filter((fx) => fx.ventana === jornada)
                     .map((fx, idx) => (
-                      <div key={`${label}-${jornada}-${idx}`} className="card flex items-center gap-2 px-3 py-2">
+                      <button
+                        key={`${label}-${jornada}-${idx}`}
+                        type="button"
+                        onClick={() => setDetail({ homeId: fx.homeId, awayId: fx.awayId, ventana: fx.ventana })}
+                        className="card flex w-full items-center gap-2 px-3 py-2 text-left"
+                      >
                         <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold" style={{ background: `${groupColor(label)}1F`, color: groupColor(label) }}>
                           {label}
                         </span>
@@ -166,7 +193,7 @@ export default function CopaPage() {
                           <InitialsAvatar name={name(fx.awayId)} size={22} avatarUrl={avatar(fx.awayId)} />
                           <span className="truncate text-sm">{name(fx.awayId)}</span>
                         </div>
-                      </div>
+                      </button>
                     ))
                 )}
               </div>
@@ -202,7 +229,17 @@ export default function CopaPage() {
         </>
       )}
 
-      <AdminPanel locked={locked} rosterCount={config?.roster.length ?? 0} onChange={mutateConfig} getRoster={() => Array.from(teamById.keys())} />
+      {detail && (
+        <CalendarDetail
+          homeId={detail.homeId}
+          awayId={detail.awayId}
+          ventana={detail.ventana}
+          goals={goals}
+          adminResults={adminResults}
+          teamById={teamById}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </div>
   );
 }
@@ -241,66 +278,107 @@ function BracketCard({
   );
 }
 
-function AdminPanel({
-  locked,
-  rosterCount,
-  onChange,
-  getRoster,
+// ── Detalle de un cruce: lo que puso cada porra en los partidos de la jornada ──
+function CalendarDetail({
+  homeId,
+  awayId,
+  ventana,
+  goals,
+  adminResults,
+  teamById,
+  onClose,
 }: {
-  locked: boolean;
-  rosterCount: number;
-  onChange: () => void;
-  getRoster: () => string[];
+  homeId?: string;
+  awayId?: string;
+  ventana: Ventana;
+  goals: GoalsMap;
+  adminResults: AdminResults;
+  teamById: Map<string, Team>;
+  onClose: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  if (typeof document === "undefined") return null;
 
-  const post = async (body: Record<string, unknown>) => {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/cup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload?.error || `Error ${res.status}`);
-      onChange();
-      setMsg("Hecho.");
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "No se ha podido completar la acción.");
-    } finally {
-      setBusy(false);
-    }
+  const n = jornadaNumber(ventana);
+  const matches = FIXTURES.filter((f) => f.stage === "groups" && f.round === `Jornada ${n}`);
+  const home = homeId ? teamById.get(homeId) : undefined;
+  const away = awayId ? teamById.get(awayId) : undefined;
+  const hg = homeId ? goals[homeId]?.[ventana] ?? 0 : 0;
+  const ag = awayId ? goals[awayId]?.[ventana] ?? 0 : 0;
+
+  const pickFor = (team: Team | undefined, fixtureId: string, group?: string) => {
+    const pick = team?.matchPicks?.[fixtureId];
+    const isDouble = Boolean(group && team?.doubleMatches?.[group] === fixtureId);
+    const scored = scoreMatchPickAgainstAdmin(
+      fixtureId,
+      pick as { home: number | null; away: number | null } | undefined,
+      isDouble,
+      adminResults
+    );
+    return { pick, points: scored.points, status: scored.status as MatchPickPointStatus };
   };
 
-  return (
-    <details className="mt-6 rounded-xl border border-border-subtle p-3 text-sm">
-      <summary className="cursor-pointer text-text-muted">Administración (solo organizador)</summary>
-      <div className="mt-3 space-y-2">
-        {locked ? (
-          <>
-            <p className="text-text-muted">Sorteo hecho con {rosterCount} porras.</p>
-            <button type="button" disabled={busy} onClick={() => void post({ action: "reset" })} className="btn btn-ghost !py-2 text-sm">
-              Deshacer sorteo
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-text-muted">Genera el sorteo con las porras actuales. Una vez hecho, queda congelado.</p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void post({ action: "draw", roster: getRoster() })}
-              className="btn btn-primary !py-2 text-sm"
-            >
-              Generar sorteo
-            </button>
-          </>
-        )}
-        {msg && <p className="text-[12px] text-text-muted">{msg}</p>}
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] flex items-end justify-center overflow-y-auto"
+      style={{ background: "rgba(15,23,42,0.6)", backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-t-2xl p-4"
+        style={{ background: "rgb(var(--bg-1))", maxHeight: "85vh", overflowY: "auto" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-display text-base font-bold text-text-warm">Jornada {n}</h3>
+          <button type="button" onClick={onClose} className="rounded-lg bg-bg-2 p-1.5 text-text-muted" aria-label="Cerrar">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Marcador del cruce */}
+        <div className="mb-4 flex items-center justify-center gap-3 rounded-xl bg-bg-2 px-3 py-3">
+          <div className="flex flex-1 items-center justify-end gap-2 min-w-0">
+            <span className="truncate text-sm font-semibold">{home?.name ?? "—"}</span>
+            <InitialsAvatar name={home?.name ?? "—"} size={28} avatarUrl={home?.avatarUrl ?? null} />
+          </div>
+          <span className="flex-shrink-0 text-lg font-black tabular-nums">{hg} - {ag}</span>
+          <div className="flex flex-1 items-center gap-2 min-w-0">
+            <InitialsAvatar name={away?.name ?? "—"} size={28} avatarUrl={away?.avatarUrl ?? null} />
+            <span className="truncate text-sm font-semibold">{away?.name ?? "—"}</span>
+          </div>
+        </div>
+
+        {/* Por partido: pronóstico de cada porra */}
+        <div className="space-y-2">
+          {matches.map((f) => {
+            const ph = pickFor(home, f.id, f.group);
+            const pa = pickFor(away, f.id, f.group);
+            return (
+              <div key={f.id} className="rounded-xl border border-border-subtle px-2 py-2">
+                <div className="mb-1.5 flex items-center justify-center gap-1.5 text-[11px] text-text-muted">
+                  <Flag country={f.homeTeam} size="sm" />
+                  <span className="font-semibold">{f.homeTeam}</span>
+                  <span>·</span>
+                  <span className="font-semibold">{f.awayTeam}</span>
+                  <Flag country={f.awayTeam} size="sm" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-1 items-center justify-end gap-1.5 min-w-0">
+                    <PickChip status={ph.status} points={ph.points} />
+                    <span className="text-sm font-bold tabular-nums">{formatScorePick(ph.pick)}</span>
+                  </div>
+                  <span className="flex-shrink-0 text-[10px] text-text-muted">vs</span>
+                  <div className="flex flex-1 items-center gap-1.5 min-w-0">
+                    <span className="text-sm font-bold tabular-nums">{formatScorePick(pa.pick)}</span>
+                    <PickChip status={pa.status} points={pa.points} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </details>
+    </div>,
+    document.body
   );
 }

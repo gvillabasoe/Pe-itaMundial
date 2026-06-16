@@ -217,16 +217,16 @@ export function useLiveScoredParticipants() {
     return PARTICIPANTS;
   }, [base.userTeamsStore]);
 
-  const { liveMatchCount, provisionalParticipants } = useMemo(() => {
+  const { liveMatchCount, provisionalParticipants, mergedResults } = useMemo(() => {
     const fixtures = Array.isArray(fixturesPayload?.fixtures) ? fixturesPayload?.fixtures : [];
     if (!fixtures || fixtures.length === 0) {
-      return { liveMatchCount: 0, provisionalParticipants: null as Team[] | null };
+      return { liveMatchCount: 0, provisionalParticipants: null as Team[] | null, mergedResults: base.adminResults };
     }
     const inPlay = fixtures.filter((f) =>
       IN_PLAY_STATUSES.has(String((f as Record<string, unknown>)?.statusShort ?? ""))
     ).length;
     if (inPlay === 0) {
-      return { liveMatchCount: 0, provisionalParticipants: null as Team[] | null };
+      return { liveMatchCount: 0, provisionalParticipants: null as Team[] | null, mergedResults: base.adminResults };
     }
     const { merged, filled } = applyApiResultsToAdminResults(
       base.adminResults,
@@ -234,7 +234,7 @@ export function useLiveScoredParticipants() {
       LIVE_OVERLAY_STATUSES
     );
     if (filled.length === 0) {
-      return { liveMatchCount: inPlay, provisionalParticipants: null as Team[] | null };
+      return { liveMatchCount: inPlay, provisionalParticipants: null as Team[] | null, mergedResults: base.adminResults };
     }
     return {
       liveMatchCount: inPlay,
@@ -242,6 +242,7 @@ export function useLiveScoredParticipants() {
         scoreParticipants(sourceParticipants, merged),
         base.avatarsById
       ),
+      mergedResults: merged,
     };
   }, [fixturesPayload, base.adminResults, sourceParticipants, base.avatarsById]);
 
@@ -251,5 +252,7 @@ export function useLiveScoredParticipants() {
     liveMatchCount,
     /** Clasificación provisional con los marcadores en vivo (o null si no procede) */
     provisionalParticipants,
+    /** AdminResults con los marcadores en vivo fusionados (para puntuar en directo) */
+    liveAdminResults: mergedResults,
   };
 }

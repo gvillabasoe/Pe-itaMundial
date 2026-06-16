@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle, ArrowDownUp, BarChart3, Check, ChevronDown, ChevronUp, Clock3, Edit2, Eye, EyeOff,
   KeyRound, LayoutGrid, ListFilter, Loader2, LogOut, MapPin, RefreshCw, Save, Shield, Sparkles, Tag, Trash2,
-  Trophy, UserCheck, UserPlus, Users, UserX,
+  Trophy, UserCheck, UserPlus, Users, UserX, Crown,
 } from "lucide-react";
 import { CountrySelectionPreview, Flag, GroupBadge, SectionTitle } from "@/components/ui";
 import { UserBadge } from "@/components/UserBadge";
@@ -35,7 +35,7 @@ const GROUP_SLOT_LABELS: Record<Exclude<GroupPositionValue, 0>, string> = {
 };
 
 type ResultsViewMode = "group" | "phase";
-type AdminTab = "resultados" | "porras" | "progreso" | "usuarios";
+type AdminTab = "resultados" | "porras" | "progreso" | "usuarios" | "copa";
 
 type GroupStandingRow = {
   team: string; played: number; win: number; draw: number; lose: number;
@@ -323,6 +323,9 @@ export default function AdminPage() {
           <button className={`pill whitespace-nowrap ${activeTab === "usuarios" ? "active" : ""}`} onClick={() => setActiveTab("usuarios")}>
             <UserPlus size={14} /> Usuarios
           </button>
+          <button className={`pill whitespace-nowrap ${activeTab === "copa" ? "active" : ""}`} onClick={() => setActiveTab("copa")}>
+            <Crown size={14} /> Copa
+          </button>
         </div>
 
         {/* ════ TAB: RESULTADOS ════ */}
@@ -561,6 +564,8 @@ export default function AdminPage() {
 
         {/* ════ TAB: USUARIOS ════ */}
         {activeTab === "usuarios" && <UsersManagementSection />}
+
+        {activeTab === "copa" && <CupAdminSection participants={participants} />}
       </div>
 
       {activeTab === "resultados" && (
@@ -1310,5 +1315,88 @@ function AdminMatchEditorCard({ match, result, onScoreChange, onClear }: {
         </div>
       </div>
     </article>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB: COPA — sorteo del Mundial entre porras (solo admin)
+// ════════════════════════════════════════════════════════════
+function CupAdminSection({ participants }: { participants: Team[] }) {
+  const [config, setConfig] = useState<{ locked: boolean; roster?: string[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/cup", { cache: "no-store" });
+        const data = await res.json();
+        if (active) setConfig(data);
+      } catch {
+        /* noop */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const post = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/cup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
+      setConfig(data);
+      setMsg("Hecho.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "No se ha podido completar la acción.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const locked = Boolean(config?.locked);
+  const rosterCount = config?.roster?.length ?? 0;
+
+  return (
+    <section className="animate-fade-in">
+      <SectionTitle accent="#C99625" icon={Crown}>Copa · Mundial entre porras</SectionTitle>
+      <div className="card space-y-3 p-4">
+        {locked ? (
+          <>
+            <p className="text-sm text-text-warm">
+              Sorteo hecho con <b>{rosterCount}</b> porras.
+            </p>
+            <p className="text-[12px] text-text-muted">
+              Las porras creadas después del sorteo no entran en la Copa (siguen en el ranking general).
+            </p>
+            <button disabled={busy} onClick={() => void post({ action: "reset" })} className="btn btn-ghost !py-2 text-sm">
+              Deshacer sorteo
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-text-warm">
+              Genera el sorteo con las {participants.length} porras actuales. Una vez hecho, queda congelado.
+            </p>
+            <button
+              disabled={busy}
+              onClick={() => void post({ action: "draw", roster: participants.map((p) => p.id) })}
+              className="btn btn-primary !py-2 text-sm"
+            >
+              Generar sorteo
+            </button>
+          </>
+        )}
+        {msg && <p className="text-[12px] text-text-muted">{msg}</p>}
+      </div>
+    </section>
   );
 }

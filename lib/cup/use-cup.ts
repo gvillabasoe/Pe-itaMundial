@@ -2,9 +2,10 @@
 
 import { useMemo } from "react";
 import useSWR from "swr";
-import { useScoredParticipants } from "@/lib/use-scored-participants";
-import { getResolvedWindows, scoreTeamWindows } from "@/lib/scoring";
+import { useLiveScoredParticipants } from "@/lib/use-scored-participants";
+import { getActiveWindows, getResolvedWindows, scoreTeamWindows } from "@/lib/scoring";
 import type { Team } from "@/lib/data";
+import type { AdminResults } from "@/lib/admin-results";
 import type { CupConfig } from "@/lib/cup/types";
 import { computeGroups, type CupGroupsResult, type GoalsMap } from "@/lib/cup/groups";
 import { buildBracket, type CupBracket, type TotalsMap } from "@/lib/cup/bracket";
@@ -23,43 +24,54 @@ export interface UseCupResult {
   bracket: CupBracket | null;
   goals: GoalsMap;
   teamById: Map<string, Team>;
+  adminResults: AdminResults;
+  liveMatchCount: number;
   isLoading: boolean;
   error: unknown;
   mutateConfig: () => void;
 }
 
 export function useCup(): UseCupResult {
-  const { participants, adminResults, isLoading, error } = useScoredParticipants();
+  const live = useLiveScoredParticipants();
+  const { participants, provisionalParticipants, liveAdminResults, liveMatchCount, isLoading, error } = live;
+
   const { data: config, mutate } = useSWR<CupConfig>("/api/cup", fetcher, {
     revalidateOnFocus: true,
     dedupingInterval: 30_000,
   });
 
-  const teamById = useMemo(() => new Map(participants.map((p) => [p.id, p] as [string, Team])), [participants]);
+  // Lista en vivo: usa la provisional (con marcadores en juego) si la hay.
+  const teams = useMemo(() => provisionalParticipants ?? participants, [provisionalParticipants, participants]);
+  const adminResults = liveAdminResults;
 
+  const teamById = useMemo(() => new Map(teams.map((p) => [p.id, p] as [string, Team])), [teams]);
+
+  // Goles por ventana, en vivo (mismos puntos que el ranking).
   const goals: GoalsMap = useMemo(() => {
     const map: GoalsMap = {};
-    participants.forEach((p) => {
+    teams.forEach((p) => {
       map[p.id] = scoreTeamWindows(p, adminResults);
     });
     return map;
-  }, [participants, adminResults]);
+  }, [teams, adminResults]);
 
   const totals: TotalsMap = useMemo(
-    () => Object.fromEntries(participants.map((p) => [p.id, p.totalPoints] as [string, number])),
-    [participants]
+    () => Object.fromEntries(teams.map((p) => [p.id, p.totalPoints] as [string, number])),
+    [teams]
   );
 
+  // Ventanas activas (en juego) y cerradas (completas).
+  const active = useMemo(() => getActiveWindows(adminResults), [adminResults]);
   const resolved = useMemo(() => getResolvedWindows(adminResults), [adminResults]);
 
   const groups = useMemo(
-    () => (config?.locked ? computeGroups(config.groups, goals, resolved) : null),
-    [config, goals, resolved]
+    () => (config?.locked ? computeGroups(config.groups, goals, active) : null),
+    [config, goals, active]
   );
 
   const bracket = useMemo(
-    () => (groups ? buildBracket(groups.resolveRef, goals, resolved, totals) : null),
-    [groups, goals, resolved, totals]
+    () => (groups ? buildBracket(groups.resolveRef, goals, active, resolved, totals) : null),
+    [groups, goals, active, resolved, totals]
   );
 
   return {
@@ -69,6 +81,8 @@ export function useCup(): UseCupResult {
     bracket,
     goals,
     teamById,
+    adminResults,
+    liveMatchCount,
     isLoading,
     error,
     mutateConfig: () => void mutate(),

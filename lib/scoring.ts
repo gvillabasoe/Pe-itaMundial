@@ -605,3 +605,31 @@ export function getResolvedWindows(adminResults: AdminResults): Record<Ventana, 
     FINAL: isRoundConfigured("final", adminResults),
   };
 }
+
+// ── MODO COPA — ventanas ya empezadas (para puntuar en vivo) ──
+// A diferencia de getResolvedWindows (jornada/ronda COMPLETA), aquí una
+// ventana está "activa" en cuanto tiene algún resultado, para que la Copa
+// sume puntos en directo como el ranking aunque la jornada no haya acabado.
+export function getActiveWindows(adminResults: AdminResults): Record<Ventana, boolean> {
+  const groupJornadaStarted = (n: number) => {
+    const fixtures = FIXTURES.filter((f) => f.stage === "groups" && f.round === `Jornada ${n}`);
+    return fixtures.some((f) => resolveGroupMatchResult(f.id, adminResults) !== null);
+  };
+  const roundStarted = (key: KnockoutRoundKey) =>
+    (adminResults.knockoutRounds[key] || []).some(Boolean);
+  const sr = adminResults.specialResults;
+  const finalStarted =
+    roundStarted("final") ||
+    Boolean(adminResults.podium.campeon || adminResults.podium.subcampeon || adminResults.podium.tercero) ||
+    Object.entries(sr).some(([k, v]) => (k === "minutoPrimerGol" ? v != null : Boolean(v)));
+  return {
+    J1: groupJornadaStarted(1),
+    J2: groupJornadaStarted(2),
+    J3: groupJornadaStarted(3),
+    R32: roundStarted("dieciseisavos"),
+    R16: roundStarted("octavos"),
+    QF: roundStarted("cuartos"),
+    SF: roundStarted("semis"),
+    FINAL: finalStarted,
+  };
+}
