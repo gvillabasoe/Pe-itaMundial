@@ -15,6 +15,8 @@ export interface User {
   label?: string | null;
   /** false = usuario dado de baja. */
   active?: boolean;
+  /** Foto de perfil (data URL JPEG) o null si usa iniciales. */
+  avatarUrl?: string | null;
 }
 
 export interface MatchPick {
@@ -34,6 +36,8 @@ export interface Team {
   id: string;
   name: string;
   userId: string;
+  /** Foto de perfil del dueño de la porra (inyectada desde users). */
+  avatarUrl?: string | null;
   username: string;
   championPick: string;
   runnerUpPick: string;

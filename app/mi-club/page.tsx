@@ -8,6 +8,7 @@ import {
 import { MiPorraBuilder } from "@/components/mi-porra-builder";
 import { EmptyState, Flag, GroupBadge } from "@/components/ui";
 import { useAuth } from "@/components/auth-provider";
+import { AvatarUploader } from "@/components/avatar-uploader";
 import { UserBadge } from "@/components/UserBadge";
 import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, type Team } from "@/lib/data";
 import type { AdminResults } from "@/lib/admin-results";
@@ -320,10 +321,8 @@ function PrivateZone({
       {/* User card — FIX MÓVIL: layout vertical en xs, horizontal en sm+ */}
       <div className="card mb-3 animate-fade-in">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-accent-participante/10 flex-shrink-0">
-              <User size={18} className="text-accent-participante" />
-            </div>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <AvatarUploader name={activeTeam?.name || user.username} size={52} />
             <div className="min-w-0">
               <p className="text-[10px] text-text-muted leading-tight">Usuario</p>
               <UserBadge

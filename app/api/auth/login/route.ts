@@ -125,12 +125,13 @@ export async function POST(request: Request) {
       role: "user" | "admin";
       label?: string | null;
       active?: boolean;
+      avatar_url?: string | null;
     };
 
     let result;
     try {
       result = await pool.query<UserRow>(
-        `select id, username, password_hash, display_name, role, label, active
+        `select id, username, password_hash, display_name, role, label, active, avatar_url
          from users
          where lower(username) = $1
          limit 1`,
@@ -175,6 +176,7 @@ export async function POST(request: Request) {
           role: row.role,
           label: row.label ?? null,
           active: row.active ?? true,
+          avatarUrl: row.avatar_url ?? null,
         },
       },
       { headers: { "Cache-Control": "no-store" } }

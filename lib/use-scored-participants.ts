@@ -109,6 +109,13 @@ export function useScoredParticipants() {
   );
   const userTeams = useUserTeamsStore();
 
+  // Mapa userId → avatarUrl, para mostrar la foto de cada participante.
+  const { data: avatarsData } = useSWR<{ avatars: Record<string, string> }>(
+    "/api/auth/avatars",
+    adminFetcher as unknown as (url: string) => Promise<{ avatars: Record<string, string> }>,
+    { revalidateOnFocus: true, dedupingInterval: 30_000, onErrorRetry: limitedRetry }
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const handle = () => {
@@ -125,10 +132,13 @@ export function useScoredParticipants() {
     }
     return PARTICIPANTS;
   }, [userTeams.store]);
-  const participants = useMemo<Team[]>(
-    () => scoreParticipants(sourceParticipants, adminResults),
-    [sourceParticipants, adminResults]
-  );
+  const participants = useMemo<Team[]>(() => {
+    const scored = scoreParticipants(sourceParticipants, adminResults);
+    const avatars = avatarsData?.avatars;
+    if (!avatars) return scored;
+    // Inyecta la foto de perfil del dueño en cada participante (por userId)
+    return scored.map((p) => (avatars[p.userId] ? { ...p, avatarUrl: avatars[p.userId] } : p));
+  }, [sourceParticipants, adminResults, avatarsData]);
 
   return {
     adminResults,

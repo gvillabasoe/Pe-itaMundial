@@ -995,7 +995,7 @@ function MatchOverlay({
                   <span className="font-display text-xs font-bold text-text-faint min-w-[24px]">
                     #{team.currentRank}
                   </span>
-                  <InitialsAvatar name={team.name} size={28} />
+                  <InitialsAvatar name={team.name} size={28} avatarUrl={team.avatarUrl} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-text-primary truncate">
                       {team.name}

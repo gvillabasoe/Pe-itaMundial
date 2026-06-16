@@ -40,6 +40,8 @@ interface AuthContextType {
   logout: () => void;
   favorites: string[];
   toggleFavorite: (teamId: string) => void;
+  /** Actualiza la foto de perfil en el estado tras subirla/quitarla. */
+  updateAvatar: (avatarUrl: string | null) => void;
   /** True mientras se hidrata el usuario desde localStorage al cargar. */
   isHydrating: boolean;
 }
@@ -51,6 +53,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: () => {},
   favorites: [],
   toggleFavorite: () => {},
+  updateAvatar: () => {},
   isHydrating: true,
 });
 
@@ -167,6 +170,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     safeRemove(STORAGE_KEY_USER);
   }, []);
 
+  const updateAvatar = useCallback((avatarUrl: string | null) => {
+    setUser((prev) => (prev ? { ...prev, avatarUrl } : prev));
+  }, []);
+
   const toggleFavorite = useCallback(
     (teamId: string) => {
       setFavorites((prev) => {
@@ -191,6 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         favorites,
         toggleFavorite,
+        updateAvatar,
         isHydrating,
       }}
     >

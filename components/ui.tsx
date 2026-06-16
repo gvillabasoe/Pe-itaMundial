@@ -338,7 +338,20 @@ export function SkeletonText({ lines = 1, className = "" }: { lines?: number; cl
   );
 }
 
-export function InitialsAvatar({ name, size = 32 }: { name: string; size?: number }) {
+export function InitialsAvatar({ name, size = 32, avatarUrl }: { name: string; size?: number; avatarUrl?: string | null }) {
+  // Si el usuario tiene foto de perfil, la mostramos recortada en círculo.
+  if (avatarUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={avatarUrl}
+        alt={name}
+        className="rounded-full object-cover flex-shrink-0"
+        style={{ width: size, height: size, border: "1px solid rgba(0,0,0,0.06)" }}
+      />
+    );
+  }
+
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
