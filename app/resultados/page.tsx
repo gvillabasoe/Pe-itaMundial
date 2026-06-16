@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import useSWR from "swr";
 import { AlertCircle, ChevronDown, ChevronUp, Clock3, MapPin, RefreshCw, Search, Users, Wifi, WifiOff, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { LiveGroupTables } from "@/components/live-group-tables";
 import { KnockoutBracket } from "@/components/knockout-bracket";
+import { TopScorers } from "@/components/top-scorers";
 import { EmptyState, Flag, GroupBadge, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
@@ -304,6 +305,8 @@ export default function ResultadosPage() {
   const [quickFilter, setQuickFilter] = useState<"none" | "live" | "today">("none");
   const [zoneFilter, setZoneFilter] = useState<Zone | "all">("all");
   const [openSection, setOpenSection] = useState<string | null>("group-1");
+  const liveMatchRef = useRef<HTMLDivElement | null>(null);
+  const didLiveScroll = useRef(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchView | null>(null);
 
   const { data, error, isLoading, mutate } = useSWR<ResultsApiPayload>(
@@ -346,6 +349,29 @@ export default function ResultadosPage() {
     const result = mergeScheduleWithApi(data?.fixtures || [], adminResults);
     return result.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   }, [adminResults, data]);
+
+  // Primer partido en vivo (para auto-scroll y para abrir su sección)
+  const liveMatch = useMemo(
+    () => merged.find((m) => isLiveLike(m.statusShort)) || null,
+    [merged]
+  );
+  const liveSectionKey = useMemo(() => {
+    if (!liveMatch) return null;
+    if (liveMatch.stage === "group") return `group-${liveMatch.matchday}`;
+    return liveMatch.stage;
+  }, [liveMatch]);
+
+  // Al cargar, si hay un partido en vivo, abre su sección y desplázate a él.
+  // Solo una vez por carga (no reabrir si el usuario navega luego).
+  useEffect(() => {
+    if (didLiveScroll.current || !liveMatch || !liveSectionKey) return;
+    setOpenSection(liveSectionKey);
+    didLiveScroll.current = true;
+    const t = setTimeout(() => {
+      liveMatchRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 220);
+    return () => clearTimeout(t);
+  }, [liveMatch, liveSectionKey]);
 
   // Nº de partidos en vivo / hoy para los badges del filtro rápido
   const { liveCount, todayCount } = useMemo(() => {
@@ -452,6 +478,9 @@ export default function ResultadosPage() {
 
       {/* Cuadro de la fase final (bracket, plegable) */}
       <KnockoutBracket />
+
+      {/* Carrera por la Bota de Oro (pichichi, plegable) */}
+      <TopScorers />
 
       {/* Buscador */}
       <div className="relative mb-3">
@@ -576,11 +605,12 @@ export default function ResultadosPage() {
               {open && (
                 <div className="mt-1.5 flex flex-col gap-1.5 animate-fade-in">
                   {section.matches.map((m) => (
-                    <MatchRow
-                      key={m.id}
-                      match={m}
-                      onOpen={() => setSelectedMatch(m)}
-                    />
+                    <div key={m.id} ref={liveMatch?.id === m.id ? liveMatchRef : undefined}>
+                      <MatchRow
+                        match={m}
+                        onOpen={() => setSelectedMatch(m)}
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -593,6 +623,7 @@ export default function ResultadosPage() {
         <MatchOverlay
           match={selectedMatch}
           participants={participants}
+          adminResults={adminResults}
           currentUserId={user?.id || ""}
           onClose={() => setSelectedMatch(null)}
         />
@@ -721,11 +752,13 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
 function MatchOverlay({
   match,
   participants,
+  adminResults,
   currentUserId,
   onClose,
 }: {
   match: MatchView;
   participants: Team[];
+  adminResults: AdminResults;
   currentUserId: string;
   onClose: () => void;
 }) {
@@ -737,6 +770,18 @@ function MatchOverlay({
   // español, así que el pick "Primer Goleador Español" se muestra en el
   // siguiente partido de España (id 38, España - Arabia Saudí).
   const isSpainOpener = match.id === 38;
+
+  // Resultado oficial de los especiales (si el admin ya lo confirmó), para
+  // resaltar en verde la porra que acertó. Normalizamos el nombre del goleador
+  // para comparar de forma tolerante (mayúsculas/espacios/acentos).
+  const normName = (s: string) =>
+    s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+  const officialScorer = adminResults.specialResults?.primerGolEsp || "";
+  const officialScorerNorm = officialScorer ? normName(officialScorer) : "";
+  const officialMinute =
+    typeof adminResults.specialResults?.minutoPrimerGol === "number"
+      ? adminResults.specialResults.minutoPrimerGol
+      : null;
 
   const rows = useMemo(() => {
     if (!ref) return [];
@@ -933,31 +978,49 @@ function MatchOverlay({
                     ) : (
                       <span className="text-[10px] text-text-faint">—</span>
                     )}
-                    {isInaugural && (
-                      <span className="text-[9px] font-semibold text-text-muted tabular-nums whitespace-nowrap">
-                        Min. 1.<sup>er</sup> gol:{" "}
-                        {typeof team.specials?.minutoPrimerGol === "number" &&
-                        team.specials.minutoPrimerGol > 0
-                          ? `${team.specials.minutoPrimerGol}'`
-                          : "—"}
-                      </span>
-                    )}
+                    {isInaugural && (() => {
+                      const myMinute =
+                        typeof team.specials?.minutoPrimerGol === "number" && team.specials.minutoPrimerGol > 0
+                          ? team.specials.minutoPrimerGol
+                          : null;
+                      const hit = officialMinute !== null && myMinute !== null && myMinute === officialMinute;
+                      return (
+                        <span
+                          className="text-[9px] font-semibold tabular-nums whitespace-nowrap"
+                          style={{ color: hit ? "#3E9B4F" : "rgb(var(--text-muted))" }}
+                        >
+                          Min. 1.<sup>er</sup> gol: {myMinute !== null ? `${myMinute}'` : "—"}
+                          {hit ? " ✓" : ""}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {pick && <PickChip status={pick.status} points={pick.points} />}
                   </div>
-                  {isSpainOpener && (
-                    <div
-                      className="flex items-center gap-1.5 mt-1.5 pt-1.5"
-                      style={{ borderTop: "1px solid rgb(var(--border-subtle))" }}
-                    >
-                      <span className="text-[9px] font-semibold uppercase tracking-wide text-text-faint flex-shrink-0">
-                        1.<sup>er</sup> goleador ESP
-                      </span>
-                      <span className="text-[11px] font-semibold text-text-secondary truncate">
-                        {team.specials?.primerGolEsp ? team.specials.primerGolEsp : "—"}
-                      </span>
-                    </div>
-                  )}
+                  {isSpainOpener && (() => {
+                    const myScorer = team.specials?.primerGolEsp || "";
+                    const hit = officialScorerNorm !== "" && myScorer !== "" && normName(myScorer) === officialScorerNorm;
+                    return (
+                      <div
+                        className="flex items-center gap-1.5 mt-1.5 pt-1.5"
+                        style={{ borderTop: "1px solid rgb(var(--border-subtle))" }}
+                      >
+                        <span
+                          className="text-[9px] font-semibold uppercase tracking-wide flex-shrink-0"
+                          style={{ color: hit ? "#3E9B4F" : "rgb(var(--text-faint))" }}
+                        >
+                          1.<sup>er</sup> goleador ESP
+                        </span>
+                        <span
+                          className="text-[11px] font-semibold truncate"
+                          style={{ color: hit ? "#3E9B4F" : "rgb(var(--text-secondary))" }}
+                        >
+                          {myScorer || "—"}
+                          {hit ? " ✓" : ""}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
           </div>

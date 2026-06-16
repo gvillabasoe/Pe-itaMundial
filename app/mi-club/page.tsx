@@ -298,7 +298,7 @@ function PrivateZone({
   canCreateMore: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<"resumen" | "partidos" | "grupos" | "eliminatorias" | "especiales">("resumen");
-  const [showScores, setShowScores] = useState(false);
+  const [showScores, setShowScores] = useState(true);
   const editAllowed = canEditPorra();
 
   return (
