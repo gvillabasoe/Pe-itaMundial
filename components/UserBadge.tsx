@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 // ════════════════════════════════════════════════════════════
 // UserBadge — muestra un nombre de usuario y, si tiene etiqueta,
-// un chip rojo a su derecha. Si `label` es null/vacío no pinta nada.
+// un chip dorado (mismo estilo que las etiquetas de grupo) a su
+// derecha. Si `label` es null/vacío no pinta nada.
 //
 // Uso:
 //   <UserBadge username={`@${user.username}`} label={user.label} />
@@ -33,11 +34,18 @@ export function UserBadge({
       {text ? (
         <span
           title={text}
-          style={{ background: "rgb(var(--danger))", color: "#fff" }}
+          style={{
+            // Mismo patrón que las etiquetas de grupo (GroupBadge): fondo
+            // tintado suave, texto del color saturado y borde fino con un
+            // brillo interior. Aquí en dorado, el acento premium de la app.
+            background: "rgba(var(--gold), 0.12)",
+            color: "rgb(var(--gold))",
+            borderColor: "rgba(var(--gold), 0.38)",
+          }}
           className={
-            "inline-flex items-center rounded-full px-1.5 py-0.5 " +
-            "text-[10px] font-semibold uppercase leading-none tracking-wide " +
-            "whitespace-nowrap " +
+            "inline-flex items-center rounded-full border px-2 py-0.5 " +
+            "text-[9px] font-bold uppercase tracking-wide leading-none " +
+            "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] whitespace-nowrap " +
             chipClassName
           }
         >
