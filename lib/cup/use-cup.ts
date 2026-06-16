@@ -69,10 +69,13 @@ export function useCup(): UseCupResult {
     [config, goals, active]
   );
 
-  const bracket = useMemo(
-    () => (groups ? buildBracket(groups.resolveRef, goals, active, resolved, totals) : null),
-    [groups, goals, active, resolved, totals]
-  );
+  const bracket = useMemo(() => {
+    if (!groups) return null;
+    // No se revelan los clasificados hasta que la Jornada 3 esté cerrada.
+    const groupsClosed = resolved.J3;
+    const gatedResolveRef = (ref: string) => (groupsClosed ? groups.resolveRef(ref) : undefined);
+    return buildBracket(gatedResolveRef, goals, active, resolved, totals);
+  }, [groups, goals, active, resolved, totals]);
 
   return {
     config,

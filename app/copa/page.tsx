@@ -35,6 +35,10 @@ function jornadaNumber(v: Ventana): number {
   return v === "J1" ? 1 : v === "J2" ? 2 : 3;
 }
 
+// Bracket estilo Resultados: columnas conectadas por "llaves".
+const CUP_COL_W = 184;
+const CUP_CONN_W = 20;
+
 function formatScorePick(pick: { home: number | null; away: number | null } | null | undefined): string {
   if (!pick || typeof pick.home !== "number" || typeof pick.away !== "number") return "—";
   return `${pick.home} - ${pick.away}`;
@@ -200,30 +204,60 @@ export default function CopaPage() {
             </div>
           )}
 
-          {/* ── Cuadro ── */}
+          {/* ── Cuadro (estilo bracket de Resultados) ── */}
           {tab === "cuadro" && bracket && (
             <div className="overflow-x-auto pb-2">
-              <div className="flex gap-3" style={{ minWidth: 760 }}>
+              <div style={{ display: "flex", alignItems: "stretch", minWidth: "min-content" }}>
                 {(
                   [
                     { label: "Dieciseisavos", matches: bracket.r32 },
                     { label: "Octavos", matches: bracket.r16 },
                     { label: "Cuartos", matches: bracket.qf },
-                    { label: "Semifinales", matches: bracket.sf },
-                    { label: "Final", matches: [bracket.final] },
-                    { label: "3.er puesto", matches: [bracket.third] },
-                  ] as { label: string; matches: BracketMatch[] }[]
-                ).map((col) => (
-                  <div key={col.label} className="flex-1" style={{ minWidth: 150 }}>
-                    <p className="mb-2 text-center text-[11px] font-semibold uppercase text-text-muted">{col.label}</p>
-                    <div className="space-y-2">
-                      {col.matches.map((m) => (
-                        <BracketCard key={m.id} m={m} name={name} avatar={avatar} />
-                      ))}
+                    { label: "Semifinal", matches: bracket.sf },
+                    { label: "Final", matches: [bracket.final], third: bracket.third },
+                  ] as { label: string; matches: BracketMatch[]; third?: BracketMatch }[]
+                ).map((col, i, arr) => {
+                  const next = arr[i + 1];
+                  return (
+                    <div key={col.label} style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+                      <div style={{ width: CUP_COL_W, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted" style={{ padding: "0 2px 8px", textAlign: "center" }}>
+                          {col.label}
+                        </div>
+                        {col.third ? (
+                          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}>
+                            {col.matches.map((m) => (
+                              <BracketCard key={m.id} m={m} name={name} avatar={avatar} />
+                            ))}
+                            <div>
+                              <p className="mb-1 text-center text-[9px] font-bold uppercase tracking-wider" style={{ color: "#CD7F32" }}>
+                                3.er puesto
+                              </p>
+                              <BracketCard m={col.third} name={name} avatar={avatar} />
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", gap: 12 }}>
+                            {col.matches.map((m) => (
+                              <BracketCard key={m.id} m={m} name={name} avatar={avatar} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {next && (
+                        <div style={{ width: CUP_CONN_W, flexShrink: 0, display: "flex", flexDirection: "column", paddingTop: 22 }}>
+                          <CupConnectors pairCount={next.matches.length} />
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+              {!bracket.r32[0]?.homeId && (
+                <p className="mt-2 px-1 text-[11px] text-text-muted">
+                  Los clasificados aparecerán al cerrarse la Jornada 3.
+                </p>
+              )}
             </div>
           )}
         </>
@@ -261,19 +295,57 @@ function BracketCard({
 }) {
   const Side = ({ id, slot, goals }: { id?: string; slot: string; goals?: number | null }) => {
     const isWinner = Boolean(m.winnerId) && m.winnerId === id;
+    const label = id ? name(id) : m.ronda === "R32" ? refLabel(slot) : "Por definir";
     return (
-      <div className={`flex items-center gap-1.5 ${isWinner ? "font-bold text-gold" : ""}`}>
-        {id ? <InitialsAvatar name={name(id)} size={18} avatarUrl={avatar(id)} /> : null}
-        <span className="flex-1 truncate text-xs">{id ? name(id) : (m.ronda === "R32" ? refLabel(slot) : "Por definir")}</span>
-        <span className="text-xs tabular-nums">{goals === null || goals === undefined ? "" : goals}</span>
+      <div className="flex items-center gap-1.5" style={{ padding: "1px 0" }}>
+        {id ? (
+          <InitialsAvatar name={name(id)} size={17} avatarUrl={avatar(id)} />
+        ) : (
+          <span style={{ width: 17, height: 17, borderRadius: "50%", background: "rgb(var(--bg-3))", flexShrink: 0 }} />
+        )}
+        <span
+          className={`flex-1 truncate text-[11px] ${isWinner ? "font-bold text-gold" : id ? "text-text-primary" : "text-text-faint italic"}`}
+        >
+          {label}
+        </span>
+        <span className="text-[11px] font-bold tabular-nums text-text-warm" style={{ flexShrink: 0 }}>
+          {goals === null || goals === undefined ? "" : goals}
+        </span>
       </div>
     );
   };
   return (
-    <div className="card space-y-1 px-2 py-1.5">
+    <div
+      className="rounded-xl"
+      style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))", padding: "6px 8px" }}
+    >
       <Side id={m.homeId} slot={m.homeRef} goals={m.homeGoals} />
-      <div className="h-px bg-border-subtle" />
+      <div style={{ height: 1, background: "rgb(var(--border-subtle))", margin: "3px 0" }} />
       <Side id={m.awayId} slot={m.awayRef} goals={m.awayGoals} />
+    </div>
+  );
+}
+
+// Conectores tipo "llave" entre columnas (igual que el cuadro de Resultados).
+function CupConnectors({ pairCount }: { pairCount: number }) {
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around" }}>
+      {Array.from({ length: pairCount }).map((_, i) => (
+        <div key={i} style={{ flex: 1, display: "flex", alignItems: "center", position: "relative" }}>
+          <div
+            style={{
+              width: 11,
+              height: "50%",
+              borderTop: "1.5px solid rgb(var(--border-default))",
+              borderBottom: "1.5px solid rgb(var(--border-default))",
+              borderRight: "1.5px solid rgb(var(--border-default))",
+              borderTopRightRadius: 8,
+              borderBottomRightRadius: 8,
+            }}
+          />
+          <div style={{ flex: 1, height: "1.5px", background: "rgb(var(--border-default))" }} />
+        </div>
+      ))}
     </div>
   );
 }
