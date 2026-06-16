@@ -39,7 +39,7 @@ export interface WindowSumCheck {
 
 export function verifyWindowSums(teams: Team[], adminResults: AdminResults): WindowSumCheck[] {
   const scored = scoreParticipants(teams, adminResults);
-  const totalById = new Map(scored.map((t) => [t.id, t.totalPoints]));
+  const totalById = new Map(scored.map((t) => [t.id, t.totalPoints] as [string, number]));
   return teams.map((team) => {
     const suma = sumWindows(scoreTeamWindows(team, adminResults));
     const total = adminResults.configured ? totalById.get(team.id) ?? 0 : suma;

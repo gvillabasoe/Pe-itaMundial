@@ -115,7 +115,7 @@ export function computeGroups(
   const thirds = FOUR_TEAM_GROUPS
     .map((g) => {
       const row = standings[g]?.[2];
-      return row ? { group: g, teamId: row.teamId, row } : null;
+      return row ? { group: g as string, teamId: row.teamId, row } : null;
     })
     .filter((x): x is { group: string; teamId: string; row: GroupRow } => Boolean(x))
     .sort((a, b) => b.row.pts - a.row.pts || b.row.dg - a.row.dg || b.row.gf - a.row.gf || a.teamId.localeCompare(b.teamId));

@@ -35,7 +35,7 @@ export function useCup(): UseCupResult {
     dedupingInterval: 30_000,
   });
 
-  const teamById = useMemo(() => new Map(participants.map((p) => [p.id, p])), [participants]);
+  const teamById = useMemo(() => new Map(participants.map((p) => [p.id, p] as [string, Team])), [participants]);
 
   const goals: GoalsMap = useMemo(() => {
     const map: GoalsMap = {};
@@ -46,7 +46,7 @@ export function useCup(): UseCupResult {
   }, [participants, adminResults]);
 
   const totals: TotalsMap = useMemo(
-    () => Object.fromEntries(participants.map((p) => [p.id, p.totalPoints])),
+    () => Object.fromEntries(participants.map((p) => [p.id, p.totalPoints] as [string, number])),
     [participants]
   );
 
