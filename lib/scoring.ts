@@ -4,6 +4,15 @@ import { KNOCKOUT_ADMIN_COUNTS } from "@/lib/admin-results";
 import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
 import { normalizeCountryKey } from "@/lib/flags";
 
+// ── Ventanas de puntuación para el "Mundial entre porras" (Modo Copa) ──
+// Cada ventana es un periodo de marcador independiente. El reparto es:
+//   J1/J2 = puntos de los partidos de esa jornada
+//   J3    = partidos de la jornada 3 + puntos por posición de grupo
+//   R32..SF = puntos de cada ronda eliminatoria
+//   FINAL = final/3.er puesto + podio + especiales
+export type Ventana = "J1" | "J2" | "J3" | "R32" | "R16" | "QF" | "SF" | "FINAL";
+export const VENTANAS: Ventana[] = ["J1", "J2", "J3", "R32", "R16", "QF", "SF", "FINAL"];
+
 const FIXTURE_BY_ID = new Map(FIXTURES.map((fixture) => [fixture.id, fixture]));
 const WORLD_CUP_GROUP_MATCH_ID_BY_PAIR = new Map<string, string>();
 const ADMIN_MATCH_ID_BY_FIXTURE_ID = new Map<string, string>();
@@ -196,6 +205,8 @@ function reconstructRound32Participants(team: Team): string[] {
 // ════════════════════════════════════════════════════════════
 function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
   let points = 0;
+  // Puntos por ventana eliminatoria, para el desglose del Modo Copa.
+  const koByWindow = { R32: 0, R16: 0, QF: 0, SF: 0, FINAL_KO: 0 };
   const knockoutPicks = cloneKnockoutPicks(team.knockoutPicks);
 
   // --- Obtener pts por ronda ---
@@ -209,6 +220,7 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
     getPicks: () => string[];
     adminKey: KnockoutRoundKey;
     pts: number;
+    win: keyof typeof koByWindow;
   };
 
   const scoringPlan: ScoringEntry[] = [
@@ -217,34 +229,39 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
       getPicks: () => reconstructRound32Participants(team),
       adminKey: "dieciseisavos",
       pts: ptsByKey["dieciseisavos"] ?? 6,
+      win: "R32",
     },
     // Octavos: los 16 que el usuario eligió para avanzar FROM dieciseisavos
     {
       getPicks: () => (team.knockoutPicks?.["dieciseisavos"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "octavos",
       pts: ptsByKey["octavos"] ?? 10,
+      win: "R16",
     },
     // Cuartos: los 8 que el usuario eligió para avanzar FROM octavos
     {
       getPicks: () => (team.knockoutPicks?.["octavos"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "cuartos",
       pts: ptsByKey["cuartos"] ?? 15,
+      win: "QF",
     },
     // Semis: los 4 que el usuario eligió para avanzar FROM cuartos
     {
       getPicks: () => (team.knockoutPicks?.["cuartos"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "semis",
       pts: ptsByKey["semis"] ?? 20,
+      win: "SF",
     },
     // Final: los 2 que el usuario eligió para avanzar FROM semis
     {
       getPicks: () => (team.knockoutPicks?.["semis"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "final",
       pts: ptsByKey["final"] ?? 25,
+      win: "FINAL_KO",
     },
   ];
 
-  scoringPlan.forEach(({ getPicks, adminKey, pts }) => {
+  scoringPlan.forEach(({ getPicks, adminKey, pts, win }) => {
     const configured = isRoundConfigured(adminKey, adminResults);
     if (!configured) return;
 
@@ -256,6 +273,7 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
       seen.add(country);
       if (actualTeams.has(country)) {
         points += pts;
+        koByWindow[win] += pts;
       }
     });
   });
@@ -333,7 +351,7 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
     knockoutPicks.final = (knockoutPicks.final || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
   }
 
-  return { points, knockoutPicks };
+  return { points, knockoutPicks, pointsByWindow: koByWindow };
 }
 
 function scorePodium(team: Team, adminResults: AdminResults) {
@@ -492,4 +510,98 @@ export function getSpecialsBreakdown(team: Team, adminResults: AdminResults): Sp
 
     return { key: meta.key, label: meta.label, isCountry: meta.isCountry, value, status, points, max: meta.max };
   });
+}
+
+// ════════════════════════════════════════════════════════════
+// MODO COPA — desglose de puntos por ventana
+// ════════════════════════════════════════════════════════════
+// Reparte los puntos de una porra en las 8 ventanas (los "goles" de cada
+// jornada del Mundial entre porras). Reutiliza EXACTAMENTE las mismas
+// funciones internas que scoreParticipants, así que se cumple por
+// construcción que la suma de las 8 ventanas == totalPoints de la porra
+// cuando hay resultados (adminResults.configured).
+//
+// Reparto (confirmado con el formato de la Copa):
+//   J1    = puntos de los partidos de la Jornada 1 + minuto del primer gol
+//   J2    = puntos de los partidos de la Jornada 2 + primer goleador español
+//   J3    = puntos de los partidos de la Jornada 3 + posición de grupo
+//   R32   = puntos de dieciseisavos
+//   R16   = puntos de octavos
+//   QF    = puntos de cuartos
+//   SF    = puntos de semifinales
+//   FINAL = puntos de final/3.er puesto (ronda final) + podio + resto de especiales
+export function scoreTeamWindows(team: Team, adminResults: AdminResults): Record<Ventana, number> {
+  const w: Record<Ventana, number> = { J1: 0, J2: 0, J3: 0, R32: 0, R16: 0, QF: 0, SF: 0, FINAL: 0 };
+  // Sin resultados aún: no hay goles repartibles por ventana.
+  if (!adminResults.configured) return w;
+
+  const t = cloneTeam(team);
+
+  // ── Grupos, repartidos por jornada según fixture.round ──
+  const ms = scoreGroupMatchPicks(t, adminResults);
+  Object.entries(ms.matchPicks).forEach(([fixtureId, pick]) => {
+    const pts = typeof pick.points === "number" ? pick.points : 0;
+    if (!pts) return;
+    const fixture = FIXTURE_BY_ID.get(fixtureId);
+    if (!fixture || fixture.stage !== "groups") return;
+    const round = fixture.round || "";
+    if (round.includes("1")) w.J1 += pts;
+    else if (round.includes("2")) w.J2 += pts;
+    else if (round.includes("3")) w.J3 += pts;
+  });
+
+  // Posición de grupo → se atribuye a la Jornada 3 (se resuelve al cerrar grupos).
+  w.J3 += scoreGroupPositions(t, adminResults);
+
+  // ── Eliminatorias, por ronda ──
+  const ko = scoreKnockoutRounds(t, adminResults);
+  w.R32 += ko.pointsByWindow.R32;
+  w.R16 += ko.pointsByWindow.R16;
+  w.QF += ko.pointsByWindow.QF;
+  w.SF += ko.pointsByWindow.SF;
+
+  // ── Especiales, repartidos por ventana ──
+  // Por regla del torneo: el minuto del primer gol del Mundial cuenta en la
+  // Jornada 1 y el primer goleador español en la Jornada 2. El resto de
+  // especiales se cuentan en FINAL. Usamos getSpecialsBreakdown (mismos
+  // puntos que scoreSpecials) para no romper el cuadre.
+  let specialsFinal = 0;
+  getSpecialsBreakdown(t, adminResults).forEach((item) => {
+    if (item.key === "minutoPrimerGol") w.J1 += item.points;
+    else if (item.key === "primerGolEsp") w.J2 += item.points;
+    else specialsFinal += item.points;
+  });
+
+  // ── Final/3.er puesto + podio + resto de especiales ──
+  w.FINAL += ko.pointsByWindow.FINAL_KO + scorePodium(t, adminResults) + specialsFinal;
+
+  return w;
+}
+
+// Suma de las ventanas (= goles totales repartidos). Útil para tests de cuadre.
+export function sumWindows(windows: Record<Ventana, number>): number {
+  return VENTANAS.reduce((acc, k) => acc + (windows[k] || 0), 0);
+}
+
+// ── MODO COPA — ventanas ya resueltas ──────────────────────
+// Indica qué ventanas tienen ya resultado, para saber si un cruce de la Copa
+// está "jugado". Grupos: una jornada está resuelta cuando TODOS sus partidos
+// de grupo tienen marcador. Eliminatorias: cuando la ronda del admin está
+// completa. FINAL: cuando la ronda final está completa.
+export function getResolvedWindows(adminResults: AdminResults): Record<Ventana, boolean> {
+  const groupJornadaResolved = (n: number) => {
+    const fixtures = FIXTURES.filter((f) => f.stage === "groups" && f.round === `Jornada ${n}`);
+    if (fixtures.length === 0) return false;
+    return fixtures.every((f) => resolveGroupMatchResult(f.id, adminResults) !== null);
+  };
+  return {
+    J1: groupJornadaResolved(1),
+    J2: groupJornadaResolved(2),
+    J3: groupJornadaResolved(3),
+    R32: isRoundConfigured("dieciseisavos", adminResults),
+    R16: isRoundConfigured("octavos", adminResults),
+    QF: isRoundConfigured("cuartos", adminResults),
+    SF: isRoundConfigured("semis", adminResults),
+    FINAL: isRoundConfigured("final", adminResults),
+  };
 }
