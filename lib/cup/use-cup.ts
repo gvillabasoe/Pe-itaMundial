@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { useLiveScoredParticipants } from "@/lib/use-scored-participants";
-import { getActiveWindows, getResolvedWindows, scoreTeamWindows } from "@/lib/scoring";
+import { getActiveWindows, getResolvedWindows, scoreTeamWindows, type Ventana } from "@/lib/scoring";
 import type { Team } from "@/lib/data";
 import type { AdminResults } from "@/lib/admin-results";
 import type { CupConfig } from "@/lib/cup/types";
@@ -26,6 +26,8 @@ export interface UseCupResult {
   teamById: Map<string, Team>;
   adminResults: AdminResults;
   liveMatchCount: number;
+  active: Record<Ventana, boolean>;
+  resolved: Record<Ventana, boolean>;
   isLoading: boolean;
   error: unknown;
   mutateConfig: () => void;
@@ -86,6 +88,8 @@ export function useCup(): UseCupResult {
     teamById,
     adminResults,
     liveMatchCount,
+    active,
+    resolved,
     isLoading,
     error,
     mutateConfig: () => void mutate(),

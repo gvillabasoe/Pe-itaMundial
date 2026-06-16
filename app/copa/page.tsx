@@ -33,6 +33,18 @@ function MineTag() {
   );
 }
 
+function LiveTag({ label = "En juego" }: { label?: string }) {
+  return (
+    <span
+      className="inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase leading-none"
+      style={{ background: "rgba(var(--danger), 0.12)", color: "rgb(var(--danger))" }}
+    >
+      <span className="animate-pulse" style={{ width: 5, height: 5, borderRadius: "50%", background: "rgb(var(--danger))" }} />
+      {label}
+    </span>
+  );
+}
+
 const TABS = [
   { key: "grupos", label: "Grupos" },
   { key: "calendario", label: "Calendario" },
@@ -59,11 +71,16 @@ function formatScorePick(pick: { home: number | null; away: number | null } | nu
 }
 
 export default function CopaPage() {
-  const { locked, groups, bracket, goals, teamById, adminResults, liveMatchCount, isLoading } = useCup();
+  const { locked, groups, bracket, goals, teamById, adminResults, liveMatchCount, active, resolved, isLoading } = useCup();
   const { user } = useAuth();
   const [tab, setTab] = useState<TabKey>("grupos");
   const [jornada, setJornada] = useState<Ventana>("J1");
   const [detail, setDetail] = useState<{ homeId?: string; awayId?: string; ventana: Ventana } | null>(null);
+
+  // Una ventana está "en juego" si ha empezado pero aún no ha terminado.
+  const isLive = (v: Ventana) => active[v] && !resolved[v];
+  const groupWindows: Ventana[] = ["J1", "J2", "J3"];
+  const liveGroupWin = groupWindows.find((v) => isLive(v));
 
   const name = (id?: string) => (id ? teamById.get(id)?.name ?? "—" : "—");
   const avatar = (id?: string) => (id ? teamById.get(id)?.avatarUrl ?? null : null);
@@ -129,6 +146,13 @@ export default function CopaPage() {
           {/* ── Grupos ── */}
           {tab === "grupos" && groups && (
             <div className="space-y-3">
+              {liveGroupWin && (
+                <div className="card !py-2 !px-3 flex items-center gap-2 animate-fade-in" style={{ borderColor: "rgba(var(--danger), 0.3)", background: "rgba(var(--danger), 0.06)" }}>
+                  <span className="animate-pulse" style={{ width: 7, height: 7, borderRadius: "50%", background: "rgb(var(--danger))", flexShrink: 0 }} />
+                  <span className="text-[12px] font-semibold text-text-warm">Clasificación en vivo</span>
+                  <span className="text-[11px] text-text-muted">· Jornada {jornadaNumber(liveGroupWin)} en juego</span>
+                </div>
+              )}
               {GROUP_LABELS.map((label) => {
                 const rows = groups.standings[label] || [];
                 const color = groupColor(label);
@@ -215,10 +239,18 @@ export default function CopaPage() {
                 {JORNADAS.map((j) => (
                   <button key={j.key} className={`pill whitespace-nowrap ${jornada === j.key ? "active" : ""}`} onClick={() => setJornada(j.key)}>
                     {j.label}
+                    {isLive(j.key) && <span className="ml-1.5 inline-block animate-pulse align-middle" style={{ width: 6, height: 6, borderRadius: "50%", background: "rgb(var(--danger))" }} />}
                   </button>
                 ))}
               </div>
-              <p className="mb-2 px-1 text-[11px] text-text-muted">Toca un cruce para ver lo que puso cada porra en esa jornada.</p>
+              {isLive(jornada) ? (
+                <div className="mb-2 px-1 flex items-center gap-2">
+                  <LiveTag />
+                  <span className="text-[11px] text-text-muted">Resultados provisionales · toca un cruce para ver los pronósticos.</span>
+                </div>
+              ) : (
+                <p className="mb-2 px-1 text-[11px] text-text-muted">Toca un cruce para ver lo que puso cada porra en esa jornada.</p>
+              )}
               <div className="space-y-2">
                 {GROUP_LABELS.flatMap((label) =>
                   (groups.fixtures[label] || [])
@@ -241,7 +273,10 @@ export default function CopaPage() {
                             {isMine(fx.homeId) && <MineTag />}
                             <InitialsAvatar name={name(fx.homeId)} size={22} avatarUrl={avatar(fx.homeId)} />
                           </div>
-                          <span className="flex-shrink-0 font-display rounded-lg bg-bg-2 px-2.5 py-1 text-sm font-bold tabular-nums">
+                          <span
+                            className="flex-shrink-0 font-display rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums"
+                            style={isLive(fx.ventana) ? { background: "rgba(var(--danger), 0.12)", color: "rgb(var(--danger))" } : { background: "rgb(var(--bg-2))" }}
+                          >
                             {fx.homeGoals === null ? "·" : fx.homeGoals} - {fx.awayGoals === null ? "·" : fx.awayGoals}
                           </span>
                           <div className="flex flex-1 items-center gap-2 min-w-0">
@@ -264,12 +299,12 @@ export default function CopaPage() {
                 <div style={{ display: "flex", alignItems: "stretch", minWidth: "min-content" }}>
                   {(
                     [
-                      { label: "Dieciseisavos", matches: bracket.r32 },
-                      { label: "Octavos", matches: bracket.r16 },
-                      { label: "Cuartos", matches: bracket.qf },
-                      { label: "Semifinal", matches: bracket.sf },
-                      { label: "Final", matches: [bracket.final], third: bracket.third },
-                    ] as { label: string; matches: BracketMatch[]; third?: BracketMatch }[]
+                      { label: "Dieciseisavos", matches: bracket.r32, win: "R32" },
+                      { label: "Octavos", matches: bracket.r16, win: "R16" },
+                      { label: "Cuartos", matches: bracket.qf, win: "QF" },
+                      { label: "Semifinal", matches: bracket.sf, win: "SF" },
+                      { label: "Final", matches: [bracket.final], third: bracket.third, win: "FINAL" },
+                    ] as { label: string; matches: BracketMatch[]; third?: BracketMatch; win: Ventana }[]
                   ).map((col, i, arr) => {
                     const next = arr[i + 1];
                     return (
@@ -277,6 +312,7 @@ export default function CopaPage() {
                         <div style={{ width: CUP_COL_W, flexShrink: 0, display: "flex", flexDirection: "column" }}>
                           <div className="text-[10px] font-bold uppercase tracking-wider text-text-faint" style={{ padding: "0 2px 8px", textAlign: "center" }}>
                             {col.label}
+                            {isLive(col.win) && <span className="ml-1 inline-block animate-pulse align-middle" style={{ width: 5, height: 5, borderRadius: "50%", background: "rgb(var(--danger))" }} />}
                           </div>
                           {col.third ? (
                             <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}>
@@ -325,6 +361,7 @@ export default function CopaPage() {
           adminResults={adminResults}
           teamById={teamById}
           isMine={isMine}
+          live={isLive(detail.ventana)}
           onClose={() => setDetail(null)}
         />
       )}
@@ -419,6 +456,7 @@ function CalendarDetail({
   adminResults,
   teamById,
   isMine,
+  live,
   onClose,
 }: {
   homeId?: string;
@@ -428,6 +466,7 @@ function CalendarDetail({
   adminResults: AdminResults;
   teamById: Map<string, Team>;
   isMine: (id?: string) => boolean;
+  live: boolean;
   onClose: () => void;
 }) {
   if (typeof document === "undefined") return null;
@@ -461,6 +500,7 @@ function CalendarDetail({
           <div className="flex items-center gap-2">
             <Crown size={18} className="text-gold" />
             <h3 className="font-display text-base font-bold text-text-warm">Jornada {n}</h3>
+            {live && <LiveTag />}
           </div>
           <button type="button" onClick={onClose} className="rounded-lg bg-bg-2 p-1.5 text-text-muted" aria-label="Cerrar">
             <X size={16} />
