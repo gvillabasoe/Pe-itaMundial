@@ -10,9 +10,9 @@ import { scoreGroupPositionPoints, scoreMatchPickAgainstAdmin, type MatchPickPoi
 import type { AdminResults } from "@/lib/admin-results";
 import { GROUP_LABELS } from "@/lib/cup/template";
 import { useCup } from "@/lib/cup/use-cup";
-import type { BracketMatch } from "@/lib/cup/types";
+import type { BracketMatch, CupFixture } from "@/lib/cup/types";
 import type { Ventana } from "@/lib/scoring";
-import type { GoalsMap } from "@/lib/cup/groups";
+import type { CupGroupsResult, GoalsMap } from "@/lib/cup/groups";
 
 const EXTRA_GROUP_COLORS: Record<string, string> = { M: "#3F7D6B", N: "#9C5B8B" };
 function groupColor(label: string): string {
@@ -21,6 +21,8 @@ function groupColor(label: string): string {
 
 const ACCENT = "rgb(var(--accent-participante))";
 const ACCENT_BG = "rgba(63,157,78,0.06)";
+const BLUE = "rgb(var(--accent-copa))";
+const BLUE_BG = "rgba(45,108,223,0.12)";
 
 function MineTag() {
   return (
@@ -37,7 +39,7 @@ function LiveTag({ label = "En juego" }: { label?: string }) {
   return (
     <span
       className="inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase leading-none"
-      style={{ background: "rgba(var(--danger), 0.12)", color: "rgb(var(--danger))" }}
+      style={{ background: "rgb(var(--danger) / 0.12)", color: "rgb(var(--danger))" }}
     >
       <span className="animate-pulse" style={{ width: 5, height: 5, borderRadius: "50%", background: "rgb(var(--danger))" }} />
       {label}
@@ -76,6 +78,7 @@ export default function CopaPage() {
   const [tab, setTab] = useState<TabKey>("grupos");
   const [jornada, setJornada] = useState<Ventana>("J1");
   const [detail, setDetail] = useState<{ homeId?: string; awayId?: string; ventana: Ventana } | null>(null);
+  const [porra, setPorra] = useState<{ teamId: string; label: string } | null>(null);
 
   // Una ventana está "en juego" si ha empezado pero aún no ha terminado.
   const isLive = (v: Ventana) => active[v] && !resolved[v];
@@ -108,14 +111,17 @@ export default function CopaPage() {
   return (
     <div className="px-4 pt-5 max-w-[640px] mx-auto pb-24">
       <div className="page-header animate-fade-in">
-        <div>
-          <h1 className="page-header__title">Copa</h1>
-          <p className="text-[12px] text-text-muted">Mundial entre porras</p>
+        <div className="flex items-center gap-2">
+          <Crown size={22} style={{ color: BLUE }} />
+          <div>
+            <h1 className="page-header__title">Copa</h1>
+            <p className="text-[12px] text-text-muted">Mundial entre porras</p>
+          </div>
         </div>
         {liveMatchCount > 0 && (
           <span
             className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase"
-            style={{ background: "rgba(var(--danger), 0.12)", color: "rgb(var(--danger))" }}
+            style={{ background: "rgb(var(--danger) / 0.12)", color: "rgb(var(--danger))" }}
           >
             ● En vivo
           </span>
@@ -147,7 +153,7 @@ export default function CopaPage() {
           {tab === "grupos" && groups && (
             <div className="space-y-3">
               {liveGroupWin && (
-                <div className="card !py-2 !px-3 flex items-center gap-2 animate-fade-in" style={{ borderColor: "rgba(var(--danger), 0.3)", background: "rgba(var(--danger), 0.06)" }}>
+                <div className="card !py-2 !px-3 flex items-center gap-2 animate-fade-in" style={{ borderColor: "rgb(var(--danger) / 0.3)", background: "rgb(var(--danger) / 0.06)" }}>
                   <span className="animate-pulse" style={{ width: 7, height: 7, borderRadius: "50%", background: "rgb(var(--danger))", flexShrink: 0 }} />
                   <span className="text-[12px] font-semibold text-text-warm">Clasificación en vivo</span>
                   <span className="text-[11px] text-text-muted">· Jornada {jornadaNumber(liveGroupWin)} en juego</span>
@@ -200,7 +206,8 @@ export default function CopaPage() {
                           return (
                             <tr
                               key={r.teamId}
-                              className="border-t border-border-subtle"
+                              className="border-t border-border-subtle cursor-pointer"
+                              onClick={() => setPorra({ teamId: r.teamId, label })}
                               style={{ background: mine ? ACCENT_BG : undefined }}
                             >
                               <td className="py-2 text-center" style={{ position: "relative" }}>
@@ -275,7 +282,7 @@ export default function CopaPage() {
                           </div>
                           <span
                             className="flex-shrink-0 font-display rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums"
-                            style={isLive(fx.ventana) ? { background: "rgba(var(--danger), 0.12)", color: "rgb(var(--danger))" } : { background: "rgb(var(--bg-2))" }}
+                            style={isLive(fx.ventana) ? { background: "rgb(var(--danger) / 0.12)", color: "rgb(var(--danger))" } : { background: "rgb(var(--bg-2))" }}
                           >
                             {fx.homeGoals === null ? "·" : fx.homeGoals} - {fx.awayGoals === null ? "·" : fx.awayGoals}
                           </span>
@@ -350,6 +357,19 @@ export default function CopaPage() {
             </div>
           )}
         </>
+      )}
+
+      {porra && groups && (
+        <PorraGroupDetail
+          teamId={porra.teamId}
+          label={porra.label}
+          groups={groups}
+          teamById={teamById}
+          isMine={isMine}
+          isLive={isLive}
+          onOpenMatch={(fx) => setDetail({ homeId: fx.homeId, awayId: fx.awayId, ventana: fx.ventana })}
+          onClose={() => setPorra(null)}
+        />
       )}
 
       {detail && (
@@ -447,6 +467,102 @@ function CupConnectors({ pairCount }: { pairCount: number }) {
   );
 }
 
+// ── Detalle de una porra: sus 3 partidos de grupo contra las demás ──
+function PorraGroupDetail({
+  teamId,
+  label,
+  groups,
+  teamById,
+  isMine,
+  isLive,
+  onOpenMatch,
+  onClose,
+}: {
+  teamId: string;
+  label: string;
+  groups: CupGroupsResult;
+  teamById: Map<string, Team>;
+  isMine: (id?: string) => boolean;
+  isLive: (v: Ventana) => boolean;
+  onOpenMatch: (fx: CupFixture) => void;
+  onClose: () => void;
+}) {
+  if (typeof document === "undefined") return null;
+
+  const name = (id?: string) => (id ? teamById.get(id)?.name ?? "—" : "—");
+  const avatar = (id?: string) => (id ? teamById.get(id)?.avatarUrl ?? null : null);
+  const team = teamById.get(teamId);
+  const row = (groups.standings[label] || []).find((r) => r.teamId === teamId);
+  const order: Record<string, number> = { J1: 0, J2: 1, J3: 2 };
+  const fixtures = (groups.fixtures[label] || [])
+    .filter((fx) => fx.homeId === teamId || fx.awayId === teamId)
+    .sort((a, b) => (order[a.ventana] ?? 9) - (order[b.ventana] ?? 9));
+  const color = GROUP_COLORS[label] || EXTRA_GROUP_COLORS[label] || "#7A7A7A";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-end justify-center" style={{ background: "rgba(10,12,20,0.55)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div className="rounded-t-3xl w-full max-w-[640px] max-h-[88vh] overflow-y-auto p-5 animate-slide-up bg-bg-1" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <InitialsAvatar name={name(teamId)} size={34} avatarUrl={avatar(teamId)} />
+            <div className="min-w-0">
+              <p className={`truncate font-display text-base font-bold ${isMine(teamId) ? "" : "text-text-warm"}`} style={isMine(teamId) ? { color: ACCENT } : undefined}>{team?.name ?? "—"}</p>
+              <p className="text-[11px]" style={{ color }}>Grupo {label}{row ? ` · ${row.pts} pts · ${row.dg > 0 ? `+${row.dg}` : row.dg} DG` : ""}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg bg-bg-2 p-1.5 text-text-muted flex-shrink-0" aria-label="Cerrar">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {fixtures.map((fx) => {
+            const opp = fx.homeId === teamId ? fx.awayId : fx.homeId;
+            const myGoals = fx.homeId === teamId ? fx.homeGoals : fx.awayGoals;
+            const oppGoals = fx.homeId === teamId ? fx.awayGoals : fx.homeGoals;
+            const played = myGoals !== null && oppGoals !== null;
+            let res: { txt: string; color: string; bg: string } | null = null;
+            if (played) {
+              if (myGoals! > oppGoals!) res = { txt: "G", color: "rgb(var(--accent-participante))", bg: "rgba(63,157,78,0.15)" };
+              else if (myGoals! < oppGoals!) res = { txt: "P", color: "rgb(var(--danger))", bg: "rgb(var(--danger) / 0.15)" };
+              else res = { txt: "E", color: "rgb(var(--text-muted))", bg: "rgba(120,120,120,0.15)" };
+            }
+            return (
+              <button
+                key={fx.ventana}
+                type="button"
+                onClick={() => onOpenMatch(fx)}
+                className="card flex w-full items-center gap-3 !py-2.5 !px-3 text-left"
+              >
+                <span className="flex-shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase" style={{ background: BLUE_BG, color: BLUE }}>
+                  J{jornadaNumber(fx.ventana)}
+                  {isLive(fx.ventana) && <span className="ml-1 inline-block animate-pulse align-middle" style={{ width: 5, height: 5, borderRadius: "50%", background: "rgb(var(--danger))" }} />}
+                </span>
+                <span className="text-[11px] text-text-muted">vs</span>
+                <div className="flex flex-1 items-center gap-2 min-w-0">
+                  <InitialsAvatar name={name(opp)} size={22} avatarUrl={avatar(opp)} />
+                  <span className={`truncate text-sm min-w-0 ${isMine(opp) ? "font-bold" : ""}`} style={isMine(opp) ? { color: ACCENT } : undefined}>{name(opp)}</span>
+                  {isMine(opp) && <MineTag />}
+                </div>
+                <span className="flex-shrink-0 font-display rounded-lg bg-bg-2 px-2.5 py-1 text-sm font-bold tabular-nums">
+                  {myGoals === null ? "·" : myGoals} - {oppGoals === null ? "·" : oppGoals}
+                </span>
+                {res && (
+                  <span className="flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: res.bg, color: res.color }}>
+                    {res.txt}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-center text-[11px] text-text-muted">Toca un partido para ver los pronósticos de ambas porras.</p>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── Detalle de un cruce: lo que puso cada porra en los partidos de la jornada ──
 function CalendarDetail({
   homeId,
@@ -498,7 +614,7 @@ function CalendarDetail({
       <div className="rounded-t-3xl w-full max-w-[640px] max-h-[88vh] overflow-y-auto p-5 animate-slide-up bg-bg-1" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Crown size={18} className="text-gold" />
+            <Crown size={18} style={{ color: BLUE }} />
             <h3 className="font-display text-base font-bold text-text-warm">Jornada {n}</h3>
             {live && <LiveTag />}
           </div>
@@ -552,7 +668,7 @@ function CalendarDetail({
 
         {ventana === "J3" && (
           <div className="card !py-2.5 !px-3 mt-2">
-            <div className="mb-2 text-center text-[12px] font-semibold text-text-primary">Posición de grupo</div>
+            <div className="mb-2 text-center text-[12px] font-semibold" style={{ color: BLUE }}>Posición de grupo</div>
             <div className="flex items-center gap-2">
               <div className="flex flex-1 items-center justify-end gap-1.5">
                 <span className="font-display text-sm font-bold tabular-nums rounded-lg bg-bg-2 px-2 py-0.5">

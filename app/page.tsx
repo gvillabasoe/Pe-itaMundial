@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Activity, BookOpen, ChevronRight, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
+import { Activity, BookOpen, ChevronRight, Crown, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
 import { Countdown, MatchupWithFlags, SectionTitle } from "@/components/ui";
 import { ACTIVITY, SCORING } from "@/lib/data";
 import {
@@ -209,6 +209,13 @@ const QUICK_LINKS = [
     icon: Swords,
     color: "#F0417A",
     cardStyle: { borderColor: "rgba(240,65,122,0.16)", background: "linear-gradient(135deg, rgba(240,65,122,0.08), rgba(255,255,255,0.02))" },
+  },
+  {
+    href: "/copa",
+    label: "Copa",
+    icon: Crown,
+    color: "#2D6CDF",
+    cardStyle: { borderColor: "rgba(45,108,223,0.18)", background: "linear-gradient(135deg, rgba(45,108,223,0.09), rgba(255,255,255,0.02))" },
   },
 ] as const;
 
