@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import useSWR from "swr";
 import { X } from "lucide-react";
-import { CountryWithFlag, Flag, GroupBadge, InitialsAvatar, PickChip } from "@/components/ui";
-import { FIXTURES, GROUPS, type Team } from "@/lib/data";
+import { CountryWithFlag, Flag, InitialsAvatar, PickChip } from "@/components/ui";
+import { FIXTURES, GROUPS, GROUP_COLORS, type Team } from "@/lib/data";
 import { useAuth } from "@/components/auth-provider";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 import {
@@ -14,7 +14,7 @@ import {
   buildResultsByMatchId,
   sanitizeFixtures,
 } from "@/lib/admin-import-fixtures";
-import { computeGroupTable, GROUP_MATCH_IDS, type GroupMatchScore, type GroupTableRow } from "@/lib/worldcup/group-tables";
+import { computeGroupTable, type GroupMatchScore, type GroupTableRow } from "@/lib/worldcup/group-tables";
 import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
 import { getGroupMatchResult, scoreMatchPickAgainstAdmin, type MatchPickPointStatus } from "@/lib/scoring";
 import type { AdminResults } from "@/lib/admin-results";
@@ -44,6 +44,10 @@ const QUALIFY = "rgb(var(--accent-participante))";
 const AMBER = "rgb(var(--amber))";
 const DANGER = "rgb(var(--danger))";
 const QUALIFY_BG = "rgba(63,157,78,0.06)";
+
+function groupColor(label: string): string {
+  return GROUP_COLORS[label] || "#7A7A7A";
+}
 
 function groupStatusColor(idx: number, size: number): string {
   if (idx < 2) return QUALIFY;
@@ -105,20 +109,25 @@ export function LiveGroupTables() {
 
   return (
     <div className="space-y-3">
+      {liveGroups.size > 0 && (
+        <div className="card !py-2 !px-3 flex items-center gap-2 animate-fade-in" style={{ borderColor: "rgb(var(--danger) / 0.3)", background: "rgb(var(--danger) / 0.06)" }}>
+          <span className="animate-pulse" style={{ width: 7, height: 7, borderRadius: "50%", background: DANGER, flexShrink: 0 }} />
+          <span className="text-[12px] font-semibold text-text-warm">Clasificación en vivo</span>
+          <span className="text-[11px] text-text-muted">· partidos en juego</span>
+        </div>
+      )}
       {Object.keys(GROUPS).map((letter) => {
         const table = tables[letter];
-        const playedInGroup = scores.filter((s) => (GROUP_MATCH_IDS[letter] || []).includes(s.matchId)).length;
+        const color = groupColor(letter);
         return (
           <div key={letter} className="card !p-0 overflow-hidden animate-fade-in">
-            <div className="flex items-center gap-2 px-3.5 py-2.5" style={{ borderBottom: "1px solid rgb(var(--border-subtle))" }}>
-              <GroupBadge group={letter} />
-              <span className="font-display text-sm font-bold text-text-warm" style={{ flex: 1 }}>Grupo {letter}</span>
-              {liveGroups.has(letter) ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase" style={{ color: DANGER }}>
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: DANGER }} /> En vivo
-                </span>
-              ) : (
-                <span className="text-[10px] text-text-faint">{playedInGroup}/6</span>
+            <div className="flex items-center gap-2 px-3.5 py-2.5" style={{ background: `${color}1A`, borderBottom: `1px solid ${color}33` }}>
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black" style={{ background: color, color: "#fff" }}>
+                {letter}
+              </span>
+              <span className="font-display text-sm font-bold" style={{ color, flex: 1 }}>Grupo {letter}</span>
+              {liveGroups.has(letter) && (
+                <span className="animate-pulse" style={{ width: 7, height: 7, borderRadius: "50%", background: DANGER }} />
               )}
             </div>
             <table className="w-full" style={{ tableLayout: "fixed" }}>
@@ -126,8 +135,9 @@ export function LiveGroupTables() {
                 <col style={{ width: 30 }} />
                 <col />
                 <col style={{ width: 32 }} />
-                <col style={{ width: 56 }} />
-                <col style={{ width: 40 }} />
+                <col style={{ width: 34 }} />
+                <col style={{ width: 34 }} />
+                <col style={{ width: 38 }} />
                 <col style={{ width: 42 }} />
               </colgroup>
               <thead>
@@ -135,7 +145,8 @@ export function LiveGroupTables() {
                   <th className="py-1.5 text-center font-semibold">#</th>
                   <th className="py-1.5 pl-1 text-left font-semibold">Equipo</th>
                   <th className="py-1.5 text-center font-semibold">PJ</th>
-                  <th className="py-1.5 text-center font-semibold">G-E-P</th>
+                  <th className="py-1.5 text-center font-semibold">GF</th>
+                  <th className="py-1.5 text-center font-semibold">GC</th>
                   <th className="py-1.5 text-center font-semibold">DG</th>
                   <th className="py-1.5 text-center font-semibold">PTS</th>
                 </tr>
@@ -158,7 +169,8 @@ export function LiveGroupTables() {
                         <CountryWithFlag country={row.team} size="sm" textClassName="text-[12px] text-text-primary truncate" />
                       </td>
                       <td className="py-2 text-center text-sm text-text-muted tabular-nums">{row.played}</td>
-                      <td className="py-2 text-center text-[12px] text-text-muted tabular-nums">{row.wins}-{row.draws}-{row.losses}</td>
+                      <td className="py-2 text-center text-sm tabular-nums">{row.goalsFor}</td>
+                      <td className="py-2 text-center text-sm tabular-nums">{row.goalsAgainst}</td>
                       <td className="py-2 text-center text-sm tabular-nums">{row.goalDiff > 0 ? `+${row.goalDiff}` : row.goalDiff}</td>
                       <td className="py-2 text-center text-sm font-black text-text-warm tabular-nums">{row.points}</td>
                     </tr>
