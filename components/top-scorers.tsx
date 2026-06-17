@@ -38,10 +38,19 @@ interface Backer {
   mine: boolean;
 }
 
+interface ScorerMatch {
+  home: string;
+  away: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  goals: number; // goles del jugador en ese partido
+}
+
 interface ScorerRow {
   player: string;
   country: string;
   goals: number;
+  matches: ScorerMatch[];
   backedBy: Backer[];
 }
 
@@ -58,24 +67,40 @@ export function TopScorers() {
 
   const scorers = useMemo<ScorerRow[]>(() => {
     const raw = Array.isArray(data?.fixtures) ? (data!.fixtures as Array<Record<string, unknown>>) : [];
-    // Goles por jugador (+ país según el lado del partido). Ignora goles en propia.
-    const counts = new Map<string, { display: string; country: string; goals: number }>();
+    // Goles por jugador (+ país y partidos). Ignora goles en propia.
+    const counts = new Map<string, { display: string; country: string; goals: number; matches: ScorerMatch[] }>();
     for (const f of raw) {
       const goals = Array.isArray(f.goals) ? f.goals : [];
+      if (goals.length === 0) continue;
       const home = String(f.homeTeam || "");
       const away = String(f.awayTeam || "");
+      const score = (f.score || {}) as Record<string, unknown>;
+      const homeScore = typeof score.home === "number" ? score.home : null;
+      const awayScore = typeof score.away === "number" ? score.away : null;
+
+      // Goles de cada jugador EN ESTE partido.
+      const perMatch = new Map<string, { display: string; country: string; count: number }>();
       for (const g of goals as Array<Record<string, unknown>>) {
         if (g.ownGoal === true) continue;
         const name = String(g.player || "").trim();
         if (!name || name === "—") continue;
         const key = normName(name);
         const country = g.side === "away" ? away : home;
+        const pm = perMatch.get(key) || { display: name, country, count: 0 };
+        pm.count += 1;
+        if (!pm.country && country) pm.country = country;
+        perMatch.set(key, pm);
+      }
+
+      for (const [key, pm] of perMatch) {
+        const matchEntry: ScorerMatch = { home, away, homeScore, awayScore, goals: pm.count };
         const prev = counts.get(key);
         if (prev) {
-          prev.goals += 1;
-          if (!prev.country && country) prev.country = country;
+          prev.goals += pm.count;
+          if (!prev.country && pm.country) prev.country = pm.country;
+          prev.matches.push(matchEntry);
         } else {
-          counts.set(key, { display: name, country, goals: 1 });
+          counts.set(key, { display: pm.display, country: pm.country, goals: pm.count, matches: [matchEntry] });
         }
       }
     }
@@ -100,6 +125,7 @@ export function TopScorers() {
       player: v.display,
       country: v.country,
       goals: v.goals,
+      matches: v.matches,
       backedBy: backers.get(key) || [],
     }));
     rows.sort((a, b) => b.goals - a.goals || a.player.localeCompare(b.player, "es"));
@@ -194,6 +220,37 @@ function ScorerDetail({ row, onClose }: { row: ScorerRow; onClose: () => void })
         </div>
 
         <p className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-text-warm">
+          <Footprints size={13} style={{ color: GOLD }} />
+          Partidos en los que marcó
+        </p>
+        {row.matches.length === 0 ? (
+          <p className="text-[12px] text-text-muted">Sin partidos registrados.</p>
+        ) : (
+          <div className="space-y-2">
+            {row.matches.map((m, idx) => (
+              <div key={idx} className="card !py-2.5 !px-3">
+                <div className="mb-1 flex items-center justify-center gap-2 text-[12px]">
+                  <span className="truncate font-semibold text-text-primary">{m.home}</span>
+                  <Flag country={m.home} size="sm" />
+                  <span className="text-text-faint">-</span>
+                  <Flag country={m.away} size="sm" />
+                  <span className="truncate font-semibold text-text-primary">{m.away}</span>
+                </div>
+                <div className="flex items-center justify-center gap-3">
+                  <span className="font-display rounded-lg bg-bg-2 px-2.5 py-0.5 text-sm font-black tabular-nums text-text-warm">
+                    {m.homeScore === null ? "·" : m.homeScore} - {m.awayScore === null ? "·" : m.awayScore}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "rgba(201,150,37,0.14)", color: GOLD }}>
+                    <Footprints size={11} style={{ color: GOLD }} />
+                    {m.goals} {m.goals === 1 ? "gol" : "goles"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="mb-2 mt-4 flex items-center gap-1.5 text-[12px] font-semibold text-text-warm">
           <Star size={13} style={{ fill: GOLD, color: GOLD }} />
           Lo eligieron como Bota de Oro
           {row.backedBy.length > 0 && <span className="text-text-muted font-normal">· {row.backedBy.length}</span>}
