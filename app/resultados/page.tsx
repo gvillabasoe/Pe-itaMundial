@@ -10,7 +10,7 @@ import { TopScorers } from "@/components/top-scorers";
 import { EmptyState, Flag, GroupBadge, InitialsAvatar, PickChip, Skeleton } from "@/components/ui";
 import { FIXTURES, GROUPS, type Fixture, type MatchPick, type Team } from "@/lib/data";
 import { useScoredParticipants } from "@/lib/use-scored-participants";
-import { getCityBgColor, getCityColor, REGION_LABELS, REGION_PALETTES, type Zone } from "@/lib/config/regions";
+import { getCityBgColor, getCityColor, type Zone } from "@/lib/config/regions";
 import { getStatusDisplay, getStatusGroup, isLiveLike, isLivePollingStatus } from "@/lib/config/match-status";
 import { STAGE_LABELS, STAGE_ORDER, WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
 import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
@@ -305,7 +305,6 @@ export default function ResultadosPage() {
   const [quickFilter, setQuickFilter] = useState<"none" | "live" | "today">("none");
   // Sub-pestañas de Resultados: partidos (por defecto), tablas, cuadro, goleadores
   const [resultsTab, setResultsTab] = useState<"partidos" | "tablas" | "cuadro" | "goleadores">("partidos");
-  const [zoneFilter, setZoneFilter] = useState<Zone | "all">("all");
   const [openSection, setOpenSection] = useState<string | null>("group-1");
   const liveMatchRef = useRef<HTMLDivElement | null>(null);
   const didLiveScroll = useRef(false);
@@ -420,7 +419,6 @@ export default function ResultadosPage() {
       items = items.filter((m) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(m.kickoff)) === todayMadrid);
     }
     if (stageFilter !== "all") items = items.filter((m) => m.stage === stageFilter);
-    if (zoneFilter !== "all") items = items.filter((m) => m.zone === zoneFilter);
     if (search.trim()) {
       const q = normalizeKey(search);
       items = items.filter((m) =>
@@ -428,7 +426,7 @@ export default function ResultadosPage() {
       );
     }
     return items;
-  }, [merged, stageFilter, zoneFilter, search, quickFilter]);
+  }, [merged, stageFilter, search, quickFilter]);
 
   // Agrupación: fase de grupos partida por jornada, knockouts independientes
   const sections = useMemo(() => {
@@ -563,34 +561,6 @@ export default function ResultadosPage() {
             Quitar filtro
           </button>
         )}
-      </div>
-
-      {/* Filtros región */}
-      <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
-        <button
-          className={`pill ${zoneFilter === "all" ? "active" : ""}`}
-          onClick={() => setZoneFilter("all")}
-        >
-          Todas las regiones
-        </button>
-        {(Object.keys(REGION_PALETTES) as Zone[]).map((z) => {
-          const palette = REGION_PALETTES[z] as { primary?: string };
-          const accent = palette?.primary;
-          return (
-            <button
-              key={z}
-              className={`pill ${zoneFilter === z ? "active" : ""}`}
-              onClick={() => setZoneFilter(z)}
-              style={
-                zoneFilter === z && accent
-                  ? { background: `${accent}22`, color: accent, borderColor: accent }
-                  : undefined
-              }
-            >
-              {REGION_LABELS[z]}
-            </button>
-          );
-        })}
       </div>
 
       {/* Filtros fase */}
