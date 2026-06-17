@@ -645,5 +645,7 @@ export function getGroupMatchResult(
   fixtureId: string,
   adminResults: AdminResults
 ): { home: number; away: number } | null {
-  return resolveGroupMatchResult(fixtureId, adminResults);
+  const r = resolveGroupMatchResult(fixtureId, adminResults);
+  if (!r || typeof r.home !== "number" || typeof r.away !== "number") return null;
+  return { home: r.home, away: r.away };
 }
