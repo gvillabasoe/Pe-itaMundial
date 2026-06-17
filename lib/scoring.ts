@@ -638,3 +638,12 @@ export function getActiveWindows(adminResults: AdminResults): Record<Ventana, bo
 export function scoreGroupPositionPoints(team: Team, adminResults: AdminResults): number {
   return scoreGroupPositions(team, adminResults);
 }
+
+// Resultado oficial de un partido de grupo por su fixtureId (o null si no hay).
+// Útil para mostrar el marcador real junto a los puntos del usuario.
+export function getGroupMatchResult(
+  fixtureId: string,
+  adminResults: AdminResults
+): { home: number; away: number } | null {
+  return resolveGroupMatchResult(fixtureId, adminResults);
+}

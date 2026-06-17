@@ -228,6 +228,56 @@ export default function CopaPage() {
                   </div>
                 );
               })}
+              <div className="card !p-0 overflow-hidden animate-fade-in">
+                <div className="flex items-center gap-2 px-3.5 py-2.5" style={{ background: "rgba(63,157,78,0.06)", borderBottom: "1px solid rgb(var(--border-subtle))" }}>
+                  <span className="font-display text-sm font-bold" style={{ color: ACCENT }}>Mejores terceros</span>
+                  <span className="text-[10px] text-text-muted" style={{ flex: 1 }}>· los 4 mejores pasan</span>
+                </div>
+                <table className="w-full" style={{ tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col style={{ width: 30 }} />
+                    <col />
+                    <col style={{ width: 34 }} />
+                    <col style={{ width: 32 }} />
+                    <col style={{ width: 38 }} />
+                    <col style={{ width: 42 }} />
+                  </colgroup>
+                  <thead>
+                    <tr className="text-[9px] uppercase tracking-wide text-text-faint">
+                      <th className="py-1.5 text-center font-semibold">#</th>
+                      <th className="py-1.5 pl-1 text-left font-semibold">Porra</th>
+                      <th className="py-1.5 text-center font-semibold">Gr.</th>
+                      <th className="py-1.5 text-center font-semibold">PJ</th>
+                      <th className="py-1.5 text-center font-semibold">DG</th>
+                      <th className="py-1.5 text-center font-semibold">PTS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.allRankedThirds.map((t, i) => {
+                      const sc = i < 4 ? "rgb(var(--accent-participante))" : "rgb(var(--danger))";
+                      return (
+                        <tr
+                          key={t.teamId}
+                          className="border-t border-border-subtle cursor-pointer"
+                          onClick={() => setPorra({ teamId: t.teamId, label: t.group })}
+                          style={{ background: i < 4 ? ACCENT_BG : undefined }}
+                        >
+                          <td className="py-2 text-center" style={{ position: "relative" }}>
+                            <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 2, background: sc }} />
+                            <span className="text-sm font-bold" style={{ color: sc }}>{i + 1}</span>
+                          </td>
+                          <td className="py-2 pl-1 overflow-hidden"><TeamCell id={t.teamId} size={22} /></td>
+                          <td className="py-2 text-center text-[11px] font-bold" style={{ color: groupColor(t.group) }}>{t.group}</td>
+                          <td className="py-2 text-center text-sm text-text-muted tabular-nums">{t.row.pj}</td>
+                          <td className="py-2 text-center text-sm tabular-nums">{t.row.dg > 0 ? `+${t.row.dg}` : t.row.dg}</td>
+                          <td className="py-2 text-center text-sm font-black text-text-warm tabular-nums">{t.row.pts}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
               <div className="px-1 text-[11px] text-text-muted space-y-1">
                 <p>Goles a favor = puntos de la porra en esas jornadas.</p>
                 <p className="flex flex-wrap items-center gap-x-3 gap-y-1">

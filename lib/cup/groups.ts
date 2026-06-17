@@ -86,6 +86,7 @@ export interface CupGroupsResult {
   winners: Record<string, string | undefined>; // "A".. -> teamId
   runners: Record<string, string | undefined>;
   rankedThirds: Array<{ group: string; teamId: string; row: GroupRow }>;
+  allRankedThirds: Array<{ group: string; teamId: string; row: GroupRow }>;
   thirdSlotTeam: Record<number, string | undefined>; // 1..4 -> teamId
   // resolveRef("1A"|"2B"|"T3") -> teamId | undefined
   resolveRef: (ref: string) => string | undefined;
@@ -138,5 +139,5 @@ export function computeGroups(
     return undefined;
   };
 
-  return { standings, fixtures, winners, runners, rankedThirds, thirdSlotTeam, resolveRef };
+  return { standings, fixtures, winners, runners, rankedThirds, allRankedThirds: thirds, thirdSlotTeam, resolveRef };
 }

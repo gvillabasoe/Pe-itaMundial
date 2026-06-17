@@ -515,7 +515,7 @@ export default function ResultadosPage() {
         ))}
       </div>
 
-      {resultsTab === "tablas" && <LiveGroupTables defaultOpen />}
+      {resultsTab === "tablas" && <LiveGroupTables />}
       {resultsTab === "cuadro" && <KnockoutBracket defaultOpen />}
       {resultsTab === "goleadores" && <TopScorers />}
 
