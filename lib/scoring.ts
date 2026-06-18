@@ -16,6 +16,11 @@ export const VENTANAS: Ventana[] = ["J1", "J2", "J3", "R32", "R16", "QF", "SF", 
 const FIXTURE_BY_ID = new Map(FIXTURES.map((fixture) => [fixture.id, fixture]));
 const WORLD_CUP_GROUP_MATCH_ID_BY_PAIR = new Map<string, string>();
 const ADMIN_MATCH_ID_BY_FIXTURE_ID = new Map<string, string>();
+// ¿Está el fixture invertido respecto al calendario oficial? (local/visitante al revés)
+const FIXTURE_FLIP_VS_SCHEDULE = new Map<string, boolean>();
+const WORLD_CUP_GROUP_MATCH_BY_ID = new Map(
+  WORLD_CUP_MATCHES.filter((m) => m.stage === "group").map((m) => [String(m.id), m])
+);
 
 function buildMatchKey(homeTeam: string, awayTeam: string) {
   return `${normalizeCountryKey(homeTeam)}|${normalizeCountryKey(awayTeam)}`;
@@ -29,7 +34,13 @@ WORLD_CUP_MATCHES.filter((match) => match.stage === "group").forEach((match) => 
 
 FIXTURES.forEach((fixture) => {
   const matchId = WORLD_CUP_GROUP_MATCH_ID_BY_PAIR.get(buildMatchKey(fixture.homeTeam, fixture.awayTeam));
-  if (matchId) ADMIN_MATCH_ID_BY_FIXTURE_ID.set(fixture.id, matchId);
+  if (matchId) {
+    ADMIN_MATCH_ID_BY_FIXTURE_ID.set(fixture.id, matchId);
+    const scheduleMatch = WORLD_CUP_GROUP_MATCH_BY_ID.get(matchId);
+    // El fixture está "invertido" si su local no coincide con el local oficial.
+    const flipped = scheduleMatch ? normalizeCountryKey(fixture.homeTeam) !== normalizeCountryKey(scheduleMatch.homeTeam) : false;
+    FIXTURE_FLIP_VS_SCHEDULE.set(fixture.id, flipped);
+  }
 });
 
 if (process.env.NODE_ENV !== "production" && typeof window === "undefined") {
@@ -93,7 +104,11 @@ function resolveGroupMatchResult(fixtureId: string, adminResults: AdminResults) 
   if (!matchId) return null;
   const result = adminResults.matchResults[matchId];
   if (typeof result?.home !== "number" || typeof result?.away !== "number") return null;
-  return result;
+  // matchResults está en orientación del calendario oficial; lo orientamos a la
+  // del fixture (donde el usuario hizo su pronóstico) para puntuar correctamente.
+  return FIXTURE_FLIP_VS_SCHEDULE.get(fixtureId)
+    ? { home: result.away, away: result.home }
+    : { home: result.home, away: result.away };
 }
 
 function getResultSign(home: number, away: number) {
@@ -648,4 +663,19 @@ export function getGroupMatchResult(
   const r = resolveGroupMatchResult(fixtureId, adminResults);
   if (!r || typeof r.home !== "number" || typeof r.away !== "number") return null;
   return { home: r.home, away: r.away };
+}
+
+// Orientación del fixture frente al calendario oficial (para alinear la
+// visualización con la pantalla de Resultados sin tocar los pronósticos).
+export function isFixtureFlipped(fixtureId: string): boolean {
+  return FIXTURE_FLIP_VS_SCHEDULE.get(fixtureId) ?? false;
+}
+
+// Equipos del partido en el orden del calendario oficial (local/visitante real).
+export function getScheduleTeams(fixtureId: string): { homeTeam: string; awayTeam: string } | null {
+  const fixture = FIXTURE_BY_ID.get(fixtureId);
+  if (!fixture) return null;
+  return FIXTURE_FLIP_VS_SCHEDULE.get(fixtureId)
+    ? { homeTeam: fixture.awayTeam, awayTeam: fixture.homeTeam }
+    : { homeTeam: fixture.homeTeam, awayTeam: fixture.awayTeam };
 }
