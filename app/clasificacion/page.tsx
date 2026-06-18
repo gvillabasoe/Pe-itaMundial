@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { UserBadge } from "@/components/UserBadge";
 import { FIXTURES, GROUPS, type Team } from "@/lib/data";
+import { getScheduleTeams, isFixtureFlipped } from "@/lib/scoring";
 import { useLiveScoredParticipants } from "@/lib/use-scored-participants";
 
 export default function ClasificacionPage() {
@@ -312,12 +313,18 @@ function MatchBreakdown({ team }: { team: Team }) {
             if (!pick) return null;
             const isDouble = team.doubleMatches?.[openGroup] === fixture.id;
             const hasScore = typeof pick.home === "number" && typeof pick.away === "number";
+            // Mostramos el partido en el orden del calendario oficial (igual que
+            // Resultados). Si el fixture está invertido, volteamos solo la
+            // visualización del marcador; el pronóstico guardado no se altera.
+            const sched = getScheduleTeams(fixture.id) ?? { homeTeam: fixture.homeTeam, awayTeam: fixture.awayTeam };
+            const flipped = isFixtureFlipped(fixture.id);
+            const scoreStr = hasScore ? (flipped ? `${pick.away}-${pick.home}` : `${pick.home}-${pick.away}`) : "·-·";
             return (
               <div key={fixture.id} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg text-[11px]"
                 style={{ background: "rgb(var(--bg-surface))" }}>
                 <div className="flex items-center gap-1 flex-1 min-w-0">
-                  <Flag country={fixture.homeTeam} size="sm" />
-                  <span className="truncate">{fixture.homeTeam}</span>
+                  <Flag country={sched.homeTeam} size="sm" />
+                  <span className="truncate">{sched.homeTeam}</span>
                 </div>
                 <span className="font-display text-xs font-bold tabular-nums px-2 py-0.5 rounded-md"
                   style={{
@@ -325,11 +332,11 @@ function MatchBreakdown({ team }: { team: Team }) {
                     color: isDouble ? "rgb(var(--gold))" : "rgb(var(--text-secondary))",
                     border: isDouble ? "1px solid rgba(var(--gold),0.3)" : undefined,
                   }}>
-                  {hasScore ? `${pick.home}-${pick.away}` : "·-·"}
+                  {scoreStr}
                 </span>
                 <div className="flex items-center gap-1 flex-1 min-w-0 justify-end">
-                  <span className="truncate">{fixture.awayTeam}</span>
-                  <Flag country={fixture.awayTeam} size="sm" />
+                  <span className="truncate">{sched.awayTeam}</span>
+                  <Flag country={sched.awayTeam} size="sm" />
                 </div>
                 <PickChip status={pick.status} points={pick.points} />
               </div>
