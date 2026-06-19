@@ -686,8 +686,8 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
   // cruces del builder (homeFrom/awayFrom por matchId) para reproducir el cuadro
   // EXACTO. El ganador de cada cruce es el que el usuario eligió para avanzar.
   // Los puntos se reflejan comparando cada selección con la ronda real del admin.
-  const COL_W = 208;
-  const CONN_W = 20;
+  const COL_W = 180;
+  const CONN_W = 18;
 
   const r32Teams = team.roundOf32Teams && team.roundOf32Teams.length === 32 ? team.roundOf32Teams : null;
 
@@ -800,7 +800,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                   <div className="text-[10px] font-bold uppercase tracking-wider text-text-faint" style={{ padding: "0 2px 8px", textAlign: "center" }}>
                     {col.label}
                   </div>
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", gap: 12 }}>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: isFinalCol ? "center" : "space-around", gap: 12 }}>
                     {col.ids.map((id) => {
                       const pair = col.byId[id] || ["", ""];
                       return (
@@ -815,14 +815,6 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                         />
                       );
                     })}
-                    {isFinalCol && (
-                      <div className="rounded-xl" style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))", padding: "8px 10px" }}>
-                        <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "#C99625" }}>Campeón</p>
-                        <PodiumPickRow country={team.championPick} ok={Boolean(adminResults.podium?.campeon && team.championPick === adminResults.podium.campeon)} pts={50} hasData={showScores && Boolean(adminResults.podium?.campeon)} />
-                        <p className="text-[9px] font-bold uppercase tracking-wider mt-2 mb-1.5" style={{ color: "#CD7F32" }}>3.er puesto</p>
-                        <PodiumPickRow country={team.thirdPlacePick} ok={Boolean(adminResults.podium?.tercero && team.thirdPlacePick === adminResults.podium.tercero)} pts={20} hasData={showScores && Boolean(adminResults.podium?.tercero)} />
-                      </div>
-                    )}
                   </div>
                 </div>
                 {ci < columns.length - 1 && (
@@ -833,6 +825,16 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* Podio: Campeón · Subcampeón · 3.er puesto */}
+      <div className="card mt-3 !py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mb-2">Podio</p>
+        <div className="space-y-1.5">
+          <PodiumRow label="Campeón" labelColor="#C99625" country={team.championPick} ok={Boolean(adminResults.podium?.campeon && team.championPick === adminResults.podium.campeon)} pts={50} hasData={showScores && Boolean(adminResults.podium?.campeon)} />
+          <PodiumRow label="Subcampeón" labelColor="rgb(var(--text-muted))" country={team.runnerUpPick} ok={Boolean(adminResults.podium?.subcampeon && team.runnerUpPick === adminResults.podium.subcampeon)} pts={30} hasData={showScores && Boolean(adminResults.podium?.subcampeon)} />
+          <PodiumRow label="3.er puesto" labelColor="#CD7F32" country={team.thirdPlacePick} ok={Boolean(adminResults.podium?.tercero && team.thirdPlacePick === adminResults.podium.tercero)} pts={20} hasData={showScores && Boolean(adminResults.podium?.tercero)} />
         </div>
       </div>
 
@@ -890,14 +892,20 @@ function KnockoutPickCard({ home, away, winner, adminSet, hasData, pts }: { home
   );
 }
 
-function PodiumPickRow({ country, ok, pts, hasData }: { country: string; ok: boolean; pts: number; hasData: boolean }) {
-  if (!country) return <p className="text-[10px] text-text-faint italic">Sin elegir</p>;
-  const bg = hasData ? (ok ? "rgb(var(--success-soft))" : "rgb(var(--danger-soft))") : "transparent";
+function PodiumRow({ label, labelColor, country, ok, pts, hasData }: { label: string; labelColor: string; country: string; ok: boolean; pts: number; hasData: boolean }) {
   return (
-    <div className="flex items-center gap-2" style={{ padding: "4px 6px", borderRadius: 7, background: bg }}>
-      <Flag country={country} size="sm" />
-      <span className="text-[11px] text-text-primary truncate" style={{ flex: 1 }}>{country}</span>
-      {hasData && ok && <span className="text-[10px] font-bold tabular-nums" style={{ color: "rgb(var(--success))" }}>+{pts}</span>}
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: labelColor, width: 92 }}>{label}</span>
+      {country ? (
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-warm flex-1 min-w-0">
+          <Flag country={country} size="sm" /> <span className="truncate">{country}</span>
+        </span>
+      ) : (
+        <span className="text-[11px] text-text-faint italic flex-1">Sin elegir</span>
+      )}
+      {hasData && (
+        <span className={`badge text-[9px] flex-shrink-0 ${ok ? "badge-green" : "badge-muted"}`}>{ok ? `+${pts}` : "0"}</span>
+      )}
     </div>
   );
 }
