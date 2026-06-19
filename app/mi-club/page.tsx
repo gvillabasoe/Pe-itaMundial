@@ -14,6 +14,7 @@ import { FIXTURES, GROUPS, KNOCKOUT_ROUND_DEFS, type Team } from "@/lib/data";
 import type { AdminResults } from "@/lib/admin-results";
 import { buildTeamCsv, buildTeamCsvFilename } from "@/lib/export-team-csv";
 import { useScoredParticipants, notifyUserTeamsUpdated } from "@/lib/use-scored-participants";
+import { ROUND32_MATCH_DEFS, ROUND16_MATCH_DEFS, QUARTER_MATCH_DEFS, SEMI_MATCH_DEFS, FINAL_MATCH_DEF } from "@/lib/porra-builder";
 
 // ── Fecha límite de edición: 10 junio 2026 21:00 CEST = 19:00 UTC ──
 const EDIT_DEADLINE = new Date("2026-06-10T19:00:00.000Z");
@@ -680,28 +681,15 @@ function GruposTab({ team, adminResults, showScores }: { team: Team; adminResult
 }
 
 function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; adminResults: AdminResults; showScores: boolean }) {
-  // ── Cuadro de eliminatorias del usuario (mismo estilo que el Cuadro de Resultados) ──
-  // Partimos de los 32 en orden de bracket (roundOf32Teams) y resolvemos cada
-  // cruce con los equipos que el usuario eligió para avanzar en cada ronda. Los
-  // puntos se reflejan comparando cada selección con la ronda real del admin.
+  // ── Cuadro de eliminatorias del usuario (misma estructura que el builder de la porra) ──
+  // Usamos roundOf32Teams (32 en orden de ROUND32_MATCH_DEFS) y los mapeos de
+  // cruces del builder (homeFrom/awayFrom por matchId) para reproducir el cuadro
+  // EXACTO. El ganador de cada cruce es el que el usuario eligió para avanzar.
+  // Los puntos se reflejan comparando cada selección con la ronda real del admin.
   const COL_W = 208;
   const CONN_W = 20;
 
-  const r32Teams = useMemo(() => {
-    if (team.roundOf32Teams && team.roundOf32Teams.length >= 2) return team.roundOf32Teams;
-    // Fallback (orden no-bracket): 1.º y 2.º de cada grupo + mejores terceros.
-    const out: string[] = [];
-    for (const g of Object.keys(GROUPS)) {
-      const p = team.groupOrderPicks?.[g] || [];
-      if (p[0]) out.push(p[0]);
-      if (p[1]) out.push(p[1]);
-    }
-    for (const g of (team.bestThirdGroups || [])) {
-      const p = team.groupOrderPicks?.[g] || [];
-      if (p[2]) out.push(p[2]);
-    }
-    return out;
-  }, [team]);
+  const r32Teams = team.roundOf32Teams && team.roundOf32Teams.length === 32 ? team.roundOf32Teams : null;
 
   const sets = useMemo(() => {
     const toSet = (key: string) =>
@@ -715,30 +703,64 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
     };
   }, [team]);
 
-  const bracket = useMemo(() => {
-    const toPairs = (arr: string[]) => {
-      const out: [string, string][] = [];
-      for (let i = 0; i < arr.length; i += 2) out.push([arr[i] || "", arr[i + 1] || ""]);
-      return out;
-    };
-    const advancer = (pair: [string, string] | undefined, set: Set<string>) =>
-      pair ? pair.find((t) => t && set.has(t)) || "" : "";
-    const nextRound = (matches: [string, string][], set: Set<string>): [string, string][] => {
-      const out: [string, string][] = [];
-      for (let i = 0; i < matches.length; i += 2) {
-        out.push([advancer(matches[i], set), advancer(matches[i + 1], set)]);
+  const built = useMemo(() => {
+    if (!r32Teams) return null;
+    const advancer = (pair: [string, string], set: Set<string>) => pair.find((t) => t && set.has(t)) || "";
+
+    // Cruces de Ronda de 32 por matchId (orden de ROUND32_MATCH_DEFS = orden de roundOf32Teams).
+    const r32ById: Record<string, [string, string]> = {};
+    ROUND32_MATCH_DEFS.forEach((def, k) => {
+      r32ById[def.matchId] = [r32Teams[2 * k] || "", r32Teams[2 * k + 1] || ""];
+    });
+
+    const winnerById: Record<string, string> = {};
+    Object.keys(r32ById).forEach((id) => { winnerById[id] = advancer(r32ById[id], sets.d16); });
+
+    const r16ById: Record<string, [string, string]> = {};
+    ROUND16_MATCH_DEFS.forEach((def) => {
+      const pair: [string, string] = [winnerById[def.homeFrom] || "", winnerById[def.awayFrom] || ""];
+      r16ById[def.matchId] = pair;
+      winnerById[def.matchId] = advancer(pair, sets.oct);
+    });
+
+    const qfById: Record<string, [string, string]> = {};
+    QUARTER_MATCH_DEFS.forEach((def) => {
+      const pair: [string, string] = [winnerById[def.homeFrom] || "", winnerById[def.awayFrom] || ""];
+      qfById[def.matchId] = pair;
+      winnerById[def.matchId] = advancer(pair, sets.cuartos);
+    });
+
+    const sfById: Record<string, [string, string]> = {};
+    SEMI_MATCH_DEFS.forEach((def) => {
+      const pair: [string, string] = [winnerById[def.homeFrom] || "", winnerById[def.awayFrom] || ""];
+      sfById[def.matchId] = pair;
+      winnerById[def.matchId] = advancer(pair, sets.semis);
+    });
+
+    const finalPair: [string, string] = [winnerById[FINAL_MATCH_DEF.homeFrom] || "", winnerById[FINAL_MATCH_DEF.awayFrom] || ""];
+    winnerById[FINAL_MATCH_DEF.matchId] = advancer(finalPair, sets.champ);
+    const finalById: Record<string, [string, string]> = { [FINAL_MATCH_DEF.matchId]: finalPair };
+
+    // Orden de cada columna derivado de la siguiente, para que las llaves cuadren.
+    const orderFrom = (ids: readonly string[], defs: ReadonlyArray<{ matchId: string; homeFrom: string; awayFrom: string }>) => {
+      const byId: Record<string, { matchId: string; homeFrom: string; awayFrom: string }> = {};
+      defs.forEach((d) => { byId[d.matchId] = d; });
+      const out: string[] = [];
+      for (const id of ids) {
+        const d = byId[id];
+        if (d) out.push(d.homeFrom, d.awayFrom);
       }
       return out;
     };
-    const r32 = toPairs(r32Teams);                  // 16 cruces
-    const octavos = nextRound(r32, sets.d16);       // 8
-    const cuartos = nextRound(octavos, sets.oct);   // 4
-    const semis = nextRound(cuartos, sets.cuartos); // 2
-    const finalPair = (nextRound(semis, sets.semis)[0] || ["", ""]) as [string, string];
-    return { r32, octavos, cuartos, semis, finalPair };
+    const semiOrder = [FINAL_MATCH_DEF.homeFrom, FINAL_MATCH_DEF.awayFrom];
+    const quarterOrder = orderFrom(semiOrder, SEMI_MATCH_DEFS);
+    const r16Order = orderFrom(quarterOrder, QUARTER_MATCH_DEFS);
+    const r32Order = orderFrom(r16Order, ROUND16_MATCH_DEFS);
+
+    return { r32ById, r16ById, qfById, sfById, finalById, winnerById, r32Order, r16Order, quarterOrder, semiOrder };
   }, [r32Teams, sets]);
 
-  if (r32Teams.length < 2) {
+  if (!r32Teams || !built) {
     return (
       <div className="card animate-fade-in">
         <p className="text-[12px] text-text-muted">Completa la fase de grupos y guarda la porra para ver tu cuadro de eliminatorias.</p>
@@ -748,12 +770,12 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
 
   const adminSet = (key: string) => new Set((adminResults.knockoutRounds?.[key as keyof typeof adminResults.knockoutRounds] || []).filter(Boolean));
 
-  const columns: { label: string; matches: [string, string][]; adminKey: string; pts: number; winnerSet: Set<string> }[] = [
-    { label: "Ronda de 32", matches: bracket.r32, adminKey: "dieciseisavos", pts: 6, winnerSet: sets.d16 },
-    { label: "Octavos", matches: bracket.octavos, adminKey: "octavos", pts: 10, winnerSet: sets.oct },
-    { label: "Cuartos", matches: bracket.cuartos, adminKey: "cuartos", pts: 15, winnerSet: sets.cuartos },
-    { label: "Semifinal", matches: bracket.semis, adminKey: "semis", pts: 20, winnerSet: sets.semis },
-    { label: "Final", matches: [bracket.finalPair], adminKey: "final", pts: 25, winnerSet: sets.champ },
+  const columns: { label: string; ids: string[]; byId: Record<string, [string, string]>; adminKey: string; pts: number }[] = [
+    { label: "Ronda de 32", ids: built.r32Order, byId: built.r32ById, adminKey: "dieciseisavos", pts: 6 },
+    { label: "Octavos", ids: built.r16Order, byId: built.r16ById, adminKey: "octavos", pts: 10 },
+    { label: "Cuartos", ids: built.quarterOrder, byId: built.qfById, adminKey: "cuartos", pts: 15 },
+    { label: "Semifinal", ids: built.semiOrder, byId: built.sfById, adminKey: "semis", pts: 20 },
+    { label: "Final", ids: [FINAL_MATCH_DEF.matchId], byId: built.finalById, adminKey: "final", pts: 25 },
   ];
 
   const podiumPts =
@@ -779,17 +801,20 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                     {col.label}
                   </div>
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", gap: 12 }}>
-                    {col.matches.map((m, mi) => (
-                      <KnockoutPickCard
-                        key={`${col.label}-${mi}`}
-                        home={m[0]}
-                        away={m[1]}
-                        winnerSet={col.winnerSet}
-                        adminSet={aset}
-                        hasData={hasData}
-                        pts={col.pts}
-                      />
-                    ))}
+                    {col.ids.map((id) => {
+                      const pair = col.byId[id] || ["", ""];
+                      return (
+                        <KnockoutPickCard
+                          key={id}
+                          home={pair[0]}
+                          away={pair[1]}
+                          winner={built.winnerById[id] || ""}
+                          adminSet={aset}
+                          hasData={hasData}
+                          pts={col.pts}
+                        />
+                      );
+                    })}
                     {isFinalCol && (
                       <div className="rounded-xl" style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))", padding: "8px 10px" }}>
                         <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "#C99625" }}>Campeón</p>
@@ -802,7 +827,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                 </div>
                 {ci < columns.length - 1 && (
                   <div style={{ width: CONN_W, flexShrink: 0, display: "flex", flexDirection: "column", paddingTop: 18 }}>
-                    <KOConnectors pairCount={columns[ci + 1].matches.length} />
+                    <KOConnectors pairCount={columns[ci + 1].ids.length} />
                   </div>
                 )}
               </div>
@@ -829,10 +854,10 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
   );
 }
 
-function KnockoutPickCard({ home, away, winnerSet, adminSet, hasData, pts }: { home: string; away: string; winnerSet: Set<string>; adminSet: Set<string>; hasData: boolean; pts: number }) {
+function KnockoutPickCard({ home, away, winner, adminSet, hasData, pts }: { home: string; away: string; winner: string; adminSet: Set<string>; hasData: boolean; pts: number }) {
   const row = (country: string) => {
     const isPlaceholder = !country;
-    const isWinner = !isPlaceholder && winnerSet.has(country);
+    const isWinner = !isPlaceholder && country === winner;
     const correct = hasData && !isPlaceholder && adminSet.has(country);
     const wrong = hasData && !isPlaceholder && !adminSet.has(country);
     let bg = "transparent";
