@@ -746,7 +746,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
     );
   }
 
-  const adminSet = (key: string) => new Set((adminResults.knockoutRounds?.[key] || []).filter(Boolean));
+  const adminSet = (key: string) => new Set((adminResults.knockoutRounds?.[key as keyof typeof adminResults.knockoutRounds] || []).filter(Boolean));
 
   const columns: { label: string; matches: [string, string][]; adminKey: string; pts: number; winnerSet: Set<string> }[] = [
     { label: "Ronda de 32", matches: bracket.r32, adminKey: "dieciseisavos", pts: 6, winnerSet: sets.d16 },
