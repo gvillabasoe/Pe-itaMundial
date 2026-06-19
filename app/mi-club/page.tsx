@@ -680,167 +680,212 @@ function GruposTab({ team, adminResults, showScores }: { team: Team; adminResult
 }
 
 function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; adminResults: AdminResults; showScores: boolean }) {
-  // ── Reconstrucción de participantes por ronda ──────────────────────────
-  // Dieciseisavos (32 equipos): 1.º y 2.º de cada grupo + mejores terceros
-  const round32Participants = useMemo(() => {
-    const result: string[] = [];
-    for (const group of Object.keys(GROUPS)) {
-      const picks = team.groupOrderPicks?.[group] || [];
-      if (picks[0]) result.push(picks[0]); // 1.º del grupo
-      if (picks[1]) result.push(picks[1]); // 2.º del grupo
+  // ── Cuadro de eliminatorias del usuario (mismo estilo que el Cuadro de Resultados) ──
+  // Partimos de los 32 en orden de bracket (roundOf32Teams) y resolvemos cada
+  // cruce con los equipos que el usuario eligió para avanzar en cada ronda. Los
+  // puntos se reflejan comparando cada selección con la ronda real del admin.
+  const COL_W = 208;
+  const CONN_W = 20;
+
+  const r32Teams = useMemo(() => {
+    if (team.roundOf32Teams && team.roundOf32Teams.length >= 2) return team.roundOf32Teams;
+    // Fallback (orden no-bracket): 1.º y 2.º de cada grupo + mejores terceros.
+    const out: string[] = [];
+    for (const g of Object.keys(GROUPS)) {
+      const p = team.groupOrderPicks?.[g] || [];
+      if (p[0]) out.push(p[0]);
+      if (p[1]) out.push(p[1]);
     }
-    // Mejores terceros seleccionados por el usuario
-    for (const group of (team.bestThirdGroups || [])) {
-      const picks = team.groupOrderPicks?.[group] || [];
-      if (picks[2]) result.push(picks[2]); // 3.º del grupo
+    for (const g of (team.bestThirdGroups || [])) {
+      const p = team.groupOrderPicks?.[g] || [];
+      if (p[2]) out.push(p[2]);
     }
-    return result;
+    return out;
   }, [team]);
 
-  // Picks de cada ronda: equipos que el usuario eligió para AVANZAR
-  const picksMap = useMemo(() => {
+  const sets = useMemo(() => {
     const toSet = (key: string) =>
       new Set((team.knockoutPicks?.[key] || []).map((p) => p.country).filter(Boolean));
     return {
-      dieciseisavos: toSet("dieciseisavos"),
-      octavos: toSet("octavos"),
+      d16: toSet("dieciseisavos"),
+      oct: toSet("octavos"),
       cuartos: toSet("cuartos"),
       semis: toSet("semis"),
+      champ: new Set([team.championPick].filter(Boolean) as string[]),
     };
   }, [team]);
 
-  // Cada ronda: adminKey = ronda del admin para comprobar corrección
-  // participants = equipos que el usuario TENÍA en esa ronda (no solo los que avanzaron)
-  // advancePicks = los que eligió para avanzar desde esa ronda
-  // pts = puntos por equipo correcto en esa ronda
-  const rounds = [
-    {
-      adminKey: "dieciseisavos" as import("@/lib/admin-results").KnockoutRoundKey,
-      name: "Dieciseisavos de Final",
-      pts: 6,
-      participants: round32Participants,                    // 32 reconstruidos
-      advancePicks: picksMap.dieciseisavos,                 // 16 elegidos para avanzar
-    },
-    {
-      adminKey: "octavos" as import("@/lib/admin-results").KnockoutRoundKey,
-      name: "Octavos de Final",
-      pts: 10,
-      participants: Array.from(picksMap.dieciseisavos),     // 16 picks de avance de d16
-      advancePicks: picksMap.octavos,
-    },
-    {
-      adminKey: "cuartos" as import("@/lib/admin-results").KnockoutRoundKey,
-      name: "Cuartos de Final",
-      pts: 15,
-      participants: Array.from(picksMap.octavos),           // 8
-      advancePicks: picksMap.cuartos,
-    },
-    {
-      adminKey: "semis" as import("@/lib/admin-results").KnockoutRoundKey,
-      name: "Semifinales",
-      pts: 20,
-      participants: Array.from(picksMap.cuartos),           // 4
-      advancePicks: picksMap.semis,
-    },
-    {
-      adminKey: "final" as import("@/lib/admin-results").KnockoutRoundKey,
-      name: "Final",
-      pts: 25,
-      participants: Array.from(picksMap.semis),             // 2
-      advancePicks: new Set([team.championPick].filter(Boolean) as string[]),
-    },
+  const bracket = useMemo(() => {
+    const toPairs = (arr: string[]) => {
+      const out: [string, string][] = [];
+      for (let i = 0; i < arr.length; i += 2) out.push([arr[i] || "", arr[i + 1] || ""]);
+      return out;
+    };
+    const advancer = (pair: [string, string] | undefined, set: Set<string>) =>
+      pair ? pair.find((t) => t && set.has(t)) || "" : "";
+    const nextRound = (matches: [string, string][], set: Set<string>): [string, string][] => {
+      const out: [string, string][] = [];
+      for (let i = 0; i < matches.length; i += 2) {
+        out.push([advancer(matches[i], set), advancer(matches[i + 1], set)]);
+      }
+      return out;
+    };
+    const r32 = toPairs(r32Teams);                  // 16 cruces
+    const octavos = nextRound(r32, sets.d16);       // 8
+    const cuartos = nextRound(octavos, sets.oct);   // 4
+    const semis = nextRound(cuartos, sets.cuartos); // 2
+    const finalPair = (nextRound(semis, sets.semis)[0] || ["", ""]) as [string, string];
+    return { r32, octavos, cuartos, semis, finalPair };
+  }, [r32Teams, sets]);
+
+  if (r32Teams.length < 2) {
+    return (
+      <div className="card animate-fade-in">
+        <p className="text-[12px] text-text-muted">Completa la fase de grupos y guarda la porra para ver tu cuadro de eliminatorias.</p>
+      </div>
+    );
+  }
+
+  const adminSet = (key: string) => new Set((adminResults.knockoutRounds?.[key] || []).filter(Boolean));
+
+  const columns: { label: string; matches: [string, string][]; adminKey: string; pts: number; winnerSet: Set<string> }[] = [
+    { label: "Ronda de 32", matches: bracket.r32, adminKey: "dieciseisavos", pts: 6, winnerSet: sets.d16 },
+    { label: "Octavos", matches: bracket.octavos, adminKey: "octavos", pts: 10, winnerSet: sets.oct },
+    { label: "Cuartos", matches: bracket.cuartos, adminKey: "cuartos", pts: 15, winnerSet: sets.cuartos },
+    { label: "Semifinal", matches: bracket.semis, adminKey: "semis", pts: 20, winnerSet: sets.semis },
+    { label: "Final", matches: [bracket.finalPair], adminKey: "final", pts: 25, winnerSet: sets.champ },
   ];
 
+  const podiumPts =
+    (adminResults.podium?.campeon && team.championPick === adminResults.podium.campeon ? 50 : 0) +
+    (adminResults.podium?.subcampeon && team.runnerUpPick === adminResults.podium.subcampeon ? 30 : 0) +
+    (adminResults.podium?.tercero && team.thirdPlacePick === adminResults.podium.tercero ? 20 : 0);
+
   return (
-    <div className="space-y-4 animate-fade-in">
-      {rounds.map((round) => {
-        const adminTeams = new Set(
-          (adminResults.knockoutRounds?.[round.adminKey] || []).filter(Boolean)
-        );
-        const adminHasData = adminTeams.size > 0;
-
-        const participants = round.participants;
-
-        return (
-          <div key={round.adminKey} className="card">
-            <div className="flex items-center justify-between mb-2.5">
-              <p className="text-[11px] font-bold text-text-muted uppercase tracking-wide">
-                {round.name}
-              </p>
-              <span className="badge badge-muted text-[9px]">
-                {participants.length} equipos
-              </span>
-            </div>
-
-            {participants.length === 0 ? (
-              <p className="text-[11px] text-text-muted italic">
-                Completa la fase de grupos para ver esta ronda.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {participants.map((country, idx) => {
-                  const advancePick = round.advancePicks.has(country);
-                  // Correcto si el admin confirma el equipo en esa ronda
-                  // — independiente de si el usuario lo eligió para avanzar
-                  const correct = adminHasData && showScores && adminTeams.has(country);
-                  const wrong = adminHasData && showScores && advancePick && !adminTeams.has(country);
-
-                  let bg = advancePick
-                    ? "rgba(240,65,122,0.10)"
-                    : "rgb(var(--bg-elevated))";
-                  let border = advancePick
-                    ? "1px solid rgba(240,65,122,0.28)"
-                    : "1px solid rgb(var(--border-subtle))";
-
-                  if (showScores && adminHasData) {
-                    if (correct) {
-                      bg = "rgb(var(--success-soft))";
-                      border = "1px solid rgba(var(--success), 0.3)";
-                    } else if (wrong) {
-                      bg = "rgb(var(--danger-soft))";
-                      border = "1px solid rgba(var(--danger), 0.3)";
-                    }
-                  }
-
-                  return (
-                    <span
-                      key={`${round.adminKey}-${country}-${idx}`}
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-all"
-                      style={{ background: bg, border, color: "rgb(var(--text-warm))" }}
-                    >
-                      <Flag country={country} size="sm" />
-                      <span>{country}</span>
-                      {advancePick && (
-                        <span className="text-[9px] font-black" style={{ color: "#F0417A" }}>→</span>
-                      )}
-                      {/* Puntos calculados desde la definición de la ronda, NO desde pickData.points.
-                          Así se muestran para TODOS los equipos correctos, incluyendo los que
-                          no tienen → (no elegidos para avanzar pero sí acertados en esa ronda). */}
-                      {showScores && correct && (
-                        <span className="font-bold" style={{ color: "rgb(var(--success))" }}>
-                          +{round.pts}
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
+    <div className="animate-fade-in">
+      <p className="text-[11px] text-text-muted mb-2">
+        Desliza para recorrer tu cuadro. La selección marcada con › es la que hiciste avanzar.{showScores ? " En verde, aciertos (con sus puntos); en rojo, fallos." : ""}
+      </p>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "stretch", minWidth: "min-content" }}>
+          {columns.map((col, ci) => {
+            const aset = adminSet(col.adminKey);
+            const hasData = aset.size > 0 && showScores;
+            const isFinalCol = col.label === "Final";
+            return (
+              <div key={col.label} style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+                <div style={{ width: COL_W, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-faint" style={{ padding: "0 2px 8px", textAlign: "center" }}>
+                    {col.label}
+                  </div>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", gap: 12 }}>
+                    {col.matches.map((m, mi) => (
+                      <KnockoutPickCard
+                        key={`${col.label}-${mi}`}
+                        home={m[0]}
+                        away={m[1]}
+                        winnerSet={col.winnerSet}
+                        adminSet={aset}
+                        hasData={hasData}
+                        pts={col.pts}
+                      />
+                    ))}
+                    {isFinalCol && (
+                      <div className="rounded-xl" style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))", padding: "8px 10px" }}>
+                        <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "#C99625" }}>Campeón</p>
+                        <PodiumPickRow country={team.championPick} ok={Boolean(adminResults.podium?.campeon && team.championPick === adminResults.podium.campeon)} pts={50} hasData={showScores && Boolean(adminResults.podium?.campeon)} />
+                        <p className="text-[9px] font-bold uppercase tracking-wider mt-2 mb-1.5" style={{ color: "#CD7F32" }}>3.er puesto</p>
+                        <PodiumPickRow country={team.thirdPlacePick} ok={Boolean(adminResults.podium?.tercero && team.thirdPlacePick === adminResults.podium.tercero)} pts={20} hasData={showScores && Boolean(adminResults.podium?.tercero)} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {ci < columns.length - 1 && (
+                  <div style={{ width: CONN_W, flexShrink: 0, display: "flex", flexDirection: "column", paddingTop: 18 }}>
+                    <KOConnectors pairCount={columns[ci + 1].matches.length} />
+                  </div>
+                )}
               </div>
-            )}
+            );
+          })}
+        </div>
+      </div>
 
-            <div className="mt-2 flex items-center gap-3 text-[9px] text-text-faint">
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-accent-versus/30 border border-accent-versus/40" />
-                Elegido para avanzar
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full"
-                  style={{ background: "rgb(var(--success-soft))", border: "1px solid rgba(var(--success),0.3)" }} />
-                Acertado
-              </span>
-            </div>
-          </div>
-        );
-      })}
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[9px] text-text-faint">
+        <span className="inline-flex items-center gap-1"><span style={{ color: "rgb(var(--accent-participante))", fontWeight: 900 }}>›</span> Pasa de ronda (tu pick)</span>
+        {showScores && (
+          <>
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: "rgb(var(--success-soft))", border: "1px solid rgba(var(--success),0.3)" }} /> Acertado</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: "rgb(var(--danger-soft))", border: "1px solid rgba(var(--danger),0.3)" }} /> Fallado</span>
+          </>
+        )}
+      </div>
+      {showScores && (
+        <p className="mt-2 text-[11px] text-text-muted">
+          Puntos de eliminatorias + podio reflejados en el cuadro. Podio: <span className="font-bold text-text-warm">{podiumPts}</span> pts.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function KnockoutPickCard({ home, away, winnerSet, adminSet, hasData, pts }: { home: string; away: string; winnerSet: Set<string>; adminSet: Set<string>; hasData: boolean; pts: number }) {
+  const row = (country: string) => {
+    const isPlaceholder = !country;
+    const isWinner = !isPlaceholder && winnerSet.has(country);
+    const correct = hasData && !isPlaceholder && adminSet.has(country);
+    const wrong = hasData && !isPlaceholder && !adminSet.has(country);
+    let bg = "transparent";
+    if (correct) bg = "rgb(var(--success-soft))";
+    else if (wrong) bg = "rgb(var(--danger-soft))";
+    return (
+      <div className="flex items-center gap-2" style={{ padding: "5px 8px", borderRadius: 7, background: bg }}>
+        {isPlaceholder ? (
+          <>
+            <span style={{ width: 16, height: 16, borderRadius: "50%", background: "rgb(var(--bg-3))", flexShrink: 0 }} />
+            <span className="text-[10px] text-text-faint italic truncate" style={{ flex: 1 }}>Por definir</span>
+          </>
+        ) : (
+          <>
+            <Flag country={country} size="sm" />
+            <span className={`text-[11px] truncate ${isWinner ? "font-bold text-text-warm" : "text-text-primary"}`} style={{ flex: 1 }}>{country}</span>
+            {isWinner && <span style={{ color: "rgb(var(--accent-participante))", fontWeight: 900, fontSize: 12, flexShrink: 0 }}>›</span>}
+            {correct && <span className="text-[10px] font-bold tabular-nums" style={{ color: "rgb(var(--success))", flexShrink: 0 }}>+{pts}</span>}
+          </>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="rounded-xl" style={{ background: "rgb(var(--bg-2))", border: "1px solid rgb(var(--border-subtle))" }}>
+      {row(home)}
+      <div style={{ height: 1, background: "rgb(var(--border-subtle))", margin: "0 8px" }} />
+      {row(away)}
+    </div>
+  );
+}
+
+function PodiumPickRow({ country, ok, pts, hasData }: { country: string; ok: boolean; pts: number; hasData: boolean }) {
+  if (!country) return <p className="text-[10px] text-text-faint italic">Sin elegir</p>;
+  const bg = hasData ? (ok ? "rgb(var(--success-soft))" : "rgb(var(--danger-soft))") : "transparent";
+  return (
+    <div className="flex items-center gap-2" style={{ padding: "4px 6px", borderRadius: 7, background: bg }}>
+      <Flag country={country} size="sm" />
+      <span className="text-[11px] text-text-primary truncate" style={{ flex: 1 }}>{country}</span>
+      {hasData && ok && <span className="text-[10px] font-bold tabular-nums" style={{ color: "rgb(var(--success))" }}>+{pts}</span>}
+    </div>
+  );
+}
+
+function KOConnectors({ pairCount }: { pairCount: number }) {
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around" }}>
+      {Array.from({ length: Math.max(1, pairCount) }).map((_, i) => (
+        <div key={i} style={{ flex: 1, display: "flex", alignItems: "center" }}>
+          <div style={{ width: 10, height: "50%", borderTop: "1.5px solid rgb(var(--border-default))", borderBottom: "1.5px solid rgb(var(--border-default))", borderRight: "1.5px solid rgb(var(--border-default))", borderTopRightRadius: 8, borderBottomRightRadius: 8 }} />
+          <div style={{ flex: 1, height: 1.5, background: "rgb(var(--border-default))" }} />
+        </div>
+      ))}
     </div>
   );
 }
