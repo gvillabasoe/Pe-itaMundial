@@ -44,6 +44,10 @@ export interface AdminResults {
   matchResults: Record<string, AdminMatchResult>;
   groupPositions: Record<string, GroupPositionValue>;
   knockoutRounds: Record<KnockoutRoundKey, string[]>;
+  /** Asignación de cada hueco "Mejor 3.º …" de dieciseisavos al grupo cuyo 3.º
+   *  lo ocupa. Clave = etiqueta del hueco (p. ej. "Mejor 3.º A/B/C/D/F"),
+   *  valor = letra del grupo. */
+  bestThirdAssignments: Record<string, string>;
   podium: AdminPodiumResults;
   specialResults: AdminSpecialResults;
 }
@@ -141,6 +145,17 @@ function normalizeRoundValues(roundKey: KnockoutRoundKey, values: unknown) {
   return next;
 }
 
+// ── Huecos de "Mejor 3.º" en dieciseisavos (derivados del calendario) ──
+// El admin asigna a cada hueco el grupo cuyo 3.º lo ocupa, igual que el builder.
+export const BEST_THIRD_SLOTS: { matchId: string; slot: string; eligibleGroups: string[] }[] =
+  WORLD_CUP_MATCHES
+    .filter((m) => m.stage === "round-of-32" && /^Mejor 3\.º/.test(m.awayTeam))
+    .map((m) => ({
+      matchId: String(m.id),
+      slot: m.awayTeam,
+      eligibleGroups: m.awayTeam.replace(/^Mejor 3\.º\s*/, "").split("/").map((g) => g.trim()).filter(Boolean),
+    }));
+
 export function createDefaultAdminResults(): AdminResults {
   return {
     version: ADMIN_RESULTS_VERSION,
@@ -164,6 +179,7 @@ export function createDefaultAdminResults(): AdminResults {
       },
       {} as Record<KnockoutRoundKey, string[]>
     ),
+    bestThirdAssignments: {},
     podium: { campeon: "", subcampeon: "", tercero: "" },
     specialResults: {
       mejorJugador: "", mejorJoven: "", maxGoleador: "", maxAsistente: "",
@@ -208,6 +224,14 @@ export function sanitizeAdminResults(value: unknown): AdminResults {
     knockoutRounds[round.key] = normalizeRoundValues(round.key, rawKnockoutRounds[round.key]);
   }
 
+  const rawThirds = raw.bestThirdAssignments && typeof raw.bestThirdAssignments === "object"
+    ? (raw.bestThirdAssignments as Record<string, unknown>) : {};
+  const bestThirdAssignments: Record<string, string> = {};
+  for (const { slot, eligibleGroups } of BEST_THIRD_SLOTS) {
+    const v = rawThirds[slot];
+    if (typeof v === "string" && eligibleGroups.includes(v)) bestThirdAssignments[slot] = v;
+  }
+
   const rawPodium = raw.podium && typeof raw.podium === "object"
     ? (raw.podium as Record<string, unknown>) : {};
   const rawSpecials = raw.specialResults && typeof raw.specialResults === "object"
@@ -222,6 +246,7 @@ export function sanitizeAdminResults(value: unknown): AdminResults {
     matchResults,
     groupPositions,
     knockoutRounds,
+    bestThirdAssignments,
     podium: {
       campeon: cleanTeam(rawPodium.campeon),
       subcampeon: cleanTeam(rawPodium.subcampeon),
