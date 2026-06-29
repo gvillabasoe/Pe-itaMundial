@@ -761,6 +761,7 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
     </button>
   );
 }
+
 // ── Predicciones de la peñita en ELIMINATORIAS ──────────────────────────────
 // Modelo (Opción A, coherente con el ranking): en cada cruce se muestra, por
 // porra, su apuesta de que ese equipo AVANCE (gane el cruce y pase de ronda).
@@ -884,12 +885,15 @@ function KnockoutPredictions({ match, participants, adminResults, currentUserId 
   const rows = useMemo(() => {
     if (!cfg || placeholder) return [] as { team: Team; state: KoState }[];
     const official = cfg.officialSet(adminResults);
-    const resolved = cfg.resolved(adminResults);
+    const complete = cfg.resolved(adminResults);
     return participants
       .map((t) => {
         const picked = cfg.pickCountries(t).includes(team);
+        // Verde en cuanto el equipo está clasificado a la siguiente ronda
+        // (aunque la ronda no esté completa); rojo solo si la ronda ya está
+        // completa y el equipo no aparece; si no, pendiente.
         let state: KoState = "none";
-        if (picked) state = !resolved ? "pending" : official.has(team) ? "hit" : "miss";
+        if (picked) state = official.has(team) ? "hit" : complete ? "miss" : "pending";
         return { team: t, state };
       })
       .sort((a, b) => a.team.currentRank - b.team.currentRank);
