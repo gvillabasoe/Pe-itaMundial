@@ -13,6 +13,7 @@ import { GROUPS, type Team } from "@/lib/data";
 import {
   ADMIN_SPECIAL_FIELDS,
   ALL_TEAMS_SORTED,
+  BEST_THIRD_SLOTS,
   KNOCKOUT_ADMIN_COUNTS,
   KNOCKOUT_LABELS,
   createDefaultAdminResults,
@@ -214,6 +215,21 @@ export default function AdminPage() {
       if (value) nextRound.forEach((team, i) => { if (i !== index && team === value) nextRound[i] = ""; });
       nextRound[index] = value;
       return { ...current, knockoutRounds: { ...current.knockoutRounds, [roundKey]: nextRound } };
+    });
+  };
+
+  const handleBestThirdChange = (slot: string, group: string) => {
+    touchForm();
+    setForm((current) => {
+      const next: Record<string, string> = { ...(current.bestThirdAssignments || {}) };
+      if (group) {
+        // Un mismo grupo solo puede ocupar un hueco de tercero.
+        for (const k of Object.keys(next)) { if (next[k] === group) delete next[k]; }
+        next[slot] = group;
+      } else {
+        delete next[slot];
+      }
+      return { ...current, bestThirdAssignments: next };
     });
   };
 
@@ -487,6 +503,37 @@ export default function AdminPage() {
                     </div>
                   </article>
                 ))}
+              </div>
+            </section>
+
+            <section className="mb-5 animate-fade-in">
+              <SectionTitle accent="#C99625" icon={Sparkles}>Mejores terceros</SectionTitle>
+              <p className="mb-3 text-[12px] leading-5 text-text-muted">
+                Asigna cada hueco de tercero de dieciseisavos al grupo cuyo 3.º lo ocupa. El país se toma
+                automáticamente del 3.º que hayas marcado en las posiciones de grupo.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {BEST_THIRD_SLOTS.map(({ slot, eligibleGroups }) => {
+                  const group = form.bestThirdAssignments?.[slot] || "";
+                  const team = group ? getTeamForGroupPosition(group, 3, form) : "";
+                  return (
+                    <label key={slot} className="card admin-field-block">
+                      <span className="admin-field-label">{slot}</span>
+                      <select className="input-field admin-select" value={group}
+                        onChange={(e) => handleBestThirdChange(slot, e.target.value)}>
+                        <option value="">Seleccionar grupo</option>
+                        {eligibleGroups.map((g) => (
+                          <option key={`${slot}-${g}`} value={g}>Grupo {g}</option>
+                        ))}
+                      </select>
+                      {team
+                        ? <CountrySelectionPreview country={team} emptyLabel="Sin selección" />
+                        : group
+                          ? <p className="mt-1 text-[11px] text-text-muted">Marca el 3.º del Grupo {group} en las posiciones de grupo para ver el país.</p>
+                          : null}
+                    </label>
+                  );
+                })}
               </div>
             </section>
 
