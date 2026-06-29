@@ -793,6 +793,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
           {columns.map((col, ci) => {
             const aset = adminSet(col.adminKey);
             const hasData = aset.size > 0 && showScores;
+            const complete = showScores && aset.size >= (KNOCKOUT_ROUND_SIZES[col.adminKey] ?? 0);
             const isFinalCol = col.label === "Final";
             return (
               <div key={col.label} style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
@@ -811,6 +812,7 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
                           winner={built.winnerById[id] || ""}
                           adminSet={aset}
                           hasData={hasData}
+                          complete={complete}
                           pts={col.pts}
                         />
                       );
@@ -856,12 +858,16 @@ function EliminatoriasTab({ team, adminResults, showScores }: { team: Team; admi
   );
 }
 
-function KnockoutPickCard({ home, away, winner, adminSet, hasData, pts }: { home: string; away: string; winner: string; adminSet: Set<string>; hasData: boolean; pts: number }) {
+const KNOCKOUT_ROUND_SIZES: Record<string, number> = {
+  dieciseisavos: 32, octavos: 16, cuartos: 8, semis: 4, final: 2,
+};
+
+function KnockoutPickCard({ home, away, winner, adminSet, hasData, complete, pts }: { home: string; away: string; winner: string; adminSet: Set<string>; hasData: boolean; complete: boolean; pts: number }) {
   const row = (country: string) => {
     const isPlaceholder = !country;
     const isWinner = !isPlaceholder && country === winner;
     const correct = hasData && !isPlaceholder && adminSet.has(country);
-    const wrong = hasData && !isPlaceholder && !adminSet.has(country);
+    const wrong = complete && !isPlaceholder && !adminSet.has(country);
     let bg = "transparent";
     if (correct) bg = "rgb(var(--success-soft))";
     else if (wrong) bg = "rgb(var(--danger-soft))";
