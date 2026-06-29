@@ -277,10 +277,11 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
   ];
 
   scoringPlan.forEach(({ getPicks, adminKey, pts, win }) => {
-    const configured = isRoundConfigured(adminKey, adminResults);
-    if (!configured) return;
-
+    // Puntúa con los equipos YA marcados en la ronda, aunque no esté completa:
+    // cada equipo clasificado suma en cuanto el admin lo añade.
     const actualTeams = new Set(adminResults.knockoutRounds[adminKey].filter(Boolean));
+    if (actualTeams.size === 0) return;
+
     const seen = new Set<string>();
 
     getPicks().forEach((country) => {
@@ -301,69 +302,75 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
   // directamente desde adminResults, por lo que estos campos son auxiliares.
   // Los actualizamos de todas formas para consistencia.
 
-  // knockoutPicks.dieciseisavos: comparar contra admin.dieciseisavos (participaron en esa ronda)
-  if (isRoundConfigured("dieciseisavos", adminResults)) {
+  // knockoutPicks.dieciseisavos: correcto si ya está en admin.dieciseisavos; fallo
+  // solo si la ronda está completa y no aparece; si no, pendiente.
+  {
     const adminD16 = new Set(adminResults.knockoutRounds.dieciseisavos.filter(Boolean));
+    const completeD16 = isRoundConfigured("dieciseisavos", adminResults);
     const seen = new Set<string>();
     knockoutPicks.dieciseisavos = (knockoutPicks.dieciseisavos || []).map((pick) => {
       const dup = seen.has(pick.country); seen.add(pick.country);
       const correct = !dup && adminD16.has(pick.country);
-      return { ...pick, points: correct ? (ptsByKey["dieciseisavos"] ?? 6) : 0, status: correct ? "correct" : "wrong" };
+      const points = correct ? (ptsByKey["dieciseisavos"] ?? 6) : completeD16 ? 0 : null;
+      const status = correct ? "correct" : completeD16 ? "wrong" : "pending";
+      return { ...pick, points, status };
     });
-  } else {
-    knockoutPicks.dieciseisavos = (knockoutPicks.dieciseisavos || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
   }
 
-  // knockoutPicks.octavos: comparar contra admin.octavos
-  if (isRoundConfigured("octavos", adminResults)) {
+  // knockoutPicks.octavos: correcto si ya está en admin.octavos; fallo solo si está completa.
+  {
     const adminO = new Set(adminResults.knockoutRounds.octavos.filter(Boolean));
+    const completeO = isRoundConfigured("octavos", adminResults);
     const seen = new Set<string>();
     knockoutPicks.octavos = (knockoutPicks.octavos || []).map((pick) => {
       const dup = seen.has(pick.country); seen.add(pick.country);
       const correct = !dup && adminO.has(pick.country);
-      return { ...pick, points: correct ? (ptsByKey["octavos"] ?? 10) : 0, status: correct ? "correct" : "wrong" };
+      const points = correct ? (ptsByKey["octavos"] ?? 10) : completeO ? 0 : null;
+      const status = correct ? "correct" : completeO ? "wrong" : "pending";
+      return { ...pick, points, status };
     });
-  } else {
-    knockoutPicks.octavos = (knockoutPicks.octavos || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
   }
 
-  // knockoutPicks.cuartos: comparar contra admin.cuartos
-  if (isRoundConfigured("cuartos", adminResults)) {
+  // knockoutPicks.cuartos: correcto si ya está en admin.cuartos; fallo solo si está completa.
+  {
     const adminC = new Set(adminResults.knockoutRounds.cuartos.filter(Boolean));
+    const completeC = isRoundConfigured("cuartos", adminResults);
     const seen = new Set<string>();
     knockoutPicks.cuartos = (knockoutPicks.cuartos || []).map((pick) => {
       const dup = seen.has(pick.country); seen.add(pick.country);
       const correct = !dup && adminC.has(pick.country);
-      return { ...pick, points: correct ? (ptsByKey["cuartos"] ?? 15) : 0, status: correct ? "correct" : "wrong" };
+      const points = correct ? (ptsByKey["cuartos"] ?? 15) : completeC ? 0 : null;
+      const status = correct ? "correct" : completeC ? "wrong" : "pending";
+      return { ...pick, points, status };
     });
-  } else {
-    knockoutPicks.cuartos = (knockoutPicks.cuartos || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
   }
 
-  // knockoutPicks.semis: comparar contra admin.semis
-  if (isRoundConfigured("semis", adminResults)) {
+  // knockoutPicks.semis: correcto si ya está en admin.semis; fallo solo si está completa.
+  {
     const adminS = new Set(adminResults.knockoutRounds.semis.filter(Boolean));
+    const completeS = isRoundConfigured("semis", adminResults);
     const seen = new Set<string>();
     knockoutPicks.semis = (knockoutPicks.semis || []).map((pick) => {
       const dup = seen.has(pick.country); seen.add(pick.country);
       const correct = !dup && adminS.has(pick.country);
-      return { ...pick, points: correct ? (ptsByKey["semis"] ?? 20) : 0, status: correct ? "correct" : "wrong" };
+      const points = correct ? (ptsByKey["semis"] ?? 20) : completeS ? 0 : null;
+      const status = correct ? "correct" : completeS ? "wrong" : "pending";
+      return { ...pick, points, status };
     });
-  } else {
-    knockoutPicks.semis = (knockoutPicks.semis || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
   }
 
-  // knockoutPicks.final: comparar contra admin.final
-  if (isRoundConfigured("final", adminResults)) {
+  // knockoutPicks.final: correcto si ya está en admin.final; fallo solo si está completa.
+  {
     const adminF = new Set(adminResults.knockoutRounds.final.filter(Boolean));
+    const completeF = isRoundConfigured("final", adminResults);
     const seen = new Set<string>();
     knockoutPicks.final = (knockoutPicks.final || []).map((pick) => {
       const dup = seen.has(pick.country); seen.add(pick.country);
       const correct = !dup && adminF.has(pick.country);
-      return { ...pick, points: correct ? (ptsByKey["final"] ?? 25) : 0, status: correct ? "correct" : "wrong" };
+      const points = correct ? (ptsByKey["final"] ?? 25) : completeF ? 0 : null;
+      const status = correct ? "correct" : completeF ? "wrong" : "pending";
+      return { ...pick, points, status };
     });
-  } else {
-    knockoutPicks.final = (knockoutPicks.final || []).map((pick) => ({ ...pick, points: null, status: "pending" }));
   }
 
   return { points, knockoutPicks, pointsByWindow: koByWindow };
