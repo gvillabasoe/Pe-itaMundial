@@ -761,6 +761,214 @@ function MatchRow({ match, onOpen }: { match: MatchView; onOpen: () => void }) {
     </button>
   );
 }
+// ── Predicciones de la peñita en ELIMINATORIAS ──────────────────────────────
+// Modelo (Opción A, coherente con el ranking): en cada cruce se muestra, por
+// porra, su apuesta de que ese equipo AVANCE (gane el cruce y pase de ronda).
+// Los puntos son los que esa porra suma por que el equipo alcance la SIGUIENTE
+// ronda (idénticos a los del sistema de puntuación / ranking):
+//   Ronda de 32 → +10 (pasar a octavos)   ·  Octavos → +15 (pasar a cuartos)
+//   Cuartos     → +20 (pasar a semis)     ·  Semis   → +25 (pasar a la final)
+//   Final       → +50 (campeón)           ·  3.er puesto → +20 (tercero)
+// Estados por porra: gris 0 (no tiene a ese equipo avanzando en esa ronda),
+// verde +pts › (lo tiene y avanza → suma), rojo 0 (lo tenía pero cae en ese cruce).
+type KoAdvanceConfig = {
+  pickCountries: (t: Team) => string[];
+  points: number;
+  officialSet: (a: AdminResults) => Set<string>;
+  resolved: (a: AdminResults) => boolean;
+  nextLabel: string;
+};
+
+function getKnockoutAdvanceConfig(stage: MatchStage): KoAdvanceConfig | null {
+  const ko = (t: Team, key: string) => (t.knockoutPicks?.[key] || []).map((p) => p.country).filter(Boolean);
+  switch (stage) {
+    case "round-of-32":
+      return {
+        pickCountries: (t) => ko(t, "dieciseisavos"),
+        points: 10,
+        officialSet: (a) => new Set((a.knockoutRounds.octavos || []).filter(Boolean)),
+        resolved: (a) => (a.knockoutRounds.octavos || []).filter(Boolean).length >= 16,
+        nextLabel: "octavos",
+      };
+    case "round-of-16":
+      return {
+        pickCountries: (t) => ko(t, "octavos"),
+        points: 15,
+        officialSet: (a) => new Set((a.knockoutRounds.cuartos || []).filter(Boolean)),
+        resolved: (a) => (a.knockoutRounds.cuartos || []).filter(Boolean).length >= 8,
+        nextLabel: "cuartos",
+      };
+    case "quarter-final":
+      return {
+        pickCountries: (t) => ko(t, "cuartos"),
+        points: 20,
+        officialSet: (a) => new Set((a.knockoutRounds.semis || []).filter(Boolean)),
+        resolved: (a) => (a.knockoutRounds.semis || []).filter(Boolean).length >= 4,
+        nextLabel: "semifinal",
+      };
+    case "semi-final":
+      return {
+        pickCountries: (t) => ko(t, "semis"),
+        points: 25,
+        officialSet: (a) => new Set((a.knockoutRounds.final || []).filter(Boolean)),
+        resolved: (a) => (a.knockoutRounds.final || []).filter(Boolean).length >= 2,
+        nextLabel: "final",
+      };
+    case "final":
+      return {
+        pickCountries: (t) => (t.championPick ? [t.championPick] : []),
+        points: 50,
+        officialSet: (a) => new Set(a.podium.campeon ? [a.podium.campeon] : []),
+        resolved: (a) => Boolean(a.podium.campeon),
+        nextLabel: "campeón",
+      };
+    case "third-place":
+      return {
+        pickCountries: (t) => (t.thirdPlacePick ? [t.thirdPlacePick] : []),
+        points: 20,
+        officialSet: (a) => new Set(a.podium.tercero ? [a.podium.tercero] : []),
+        resolved: (a) => Boolean(a.podium.tercero),
+        nextLabel: "3.er puesto",
+      };
+    default:
+      return null;
+  }
+}
+
+type KoState = "none" | "hit" | "miss" | "pending";
+
+function KnockoutPickBadge({ state, points }: { state: KoState; points: number }) {
+  if (state === "hit") {
+    return (
+      <span className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums inline-flex items-center gap-1"
+        style={{ background: "rgba(63,157,78,0.16)", color: "#3E9B4F", border: "1px solid rgba(63,157,78,0.3)" }}>
+        <span aria-hidden>›</span> +{points}
+      </span>
+    );
+  }
+  if (state === "miss") {
+    return (
+      <span className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums"
+        style={{ background: "rgb(var(--danger) / 0.12)", color: "rgb(var(--danger))", border: "1px solid rgb(var(--danger) / 0.25)" }}>
+        0
+      </span>
+    );
+  }
+  if (state === "pending") {
+    return (
+      <span className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums"
+        style={{ background: "rgb(var(--bg-muted))", color: "rgb(var(--text-faint))", border: "1px dashed rgb(var(--border-default))" }}>
+        +{points}
+      </span>
+    );
+  }
+  return (
+    <span className="font-display text-xs font-bold rounded-md px-2 py-0.5 tabular-nums"
+      style={{ background: "rgb(var(--bg-muted))", color: "rgb(var(--text-faint))" }}>
+      0
+    </span>
+  );
+}
+
+function KnockoutPredictions({ match, participants, adminResults, currentUserId }: {
+  match: MatchView;
+  participants: Team[];
+  adminResults: AdminResults;
+  currentUserId: string;
+}) {
+  const [side, setSide] = useState<"home" | "away">("home");
+  const cfg = getKnockoutAdvanceConfig(match.stage);
+  const team = side === "home" ? match.homeTeam : match.awayTeam;
+  const placeholder = /Grupo|Ganador|Perdedor|Mejor 3/.test(team);
+
+  const rows = useMemo(() => {
+    if (!cfg || placeholder) return [] as { team: Team; state: KoState }[];
+    const official = cfg.officialSet(adminResults);
+    const resolved = cfg.resolved(adminResults);
+    return participants
+      .map((t) => {
+        const picked = cfg.pickCountries(t).includes(team);
+        let state: KoState = "none";
+        if (picked) state = !resolved ? "pending" : official.has(team) ? "hit" : "miss";
+        return { team: t, state };
+      })
+      .sort((a, b) => a.team.currentRank - b.team.currentRank);
+  }, [cfg, placeholder, team, participants, adminResults]);
+
+  if (!cfg) return <EmptyState text="Sin predicciones para esta ronda." />;
+
+  const aciertos = rows.filter((r) => r.state === "hit").length;
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {/* Toggle Local / Visitante */}
+      <div className="flex gap-1.5">
+        {(["home", "away"] as const).map((s) => {
+          const t = s === "home" ? match.homeTeam : match.awayTeam;
+          const active = side === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSide(s)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold cursor-pointer min-w-0"
+              style={{
+                background: active ? "rgb(var(--bg-elevated))" : "transparent",
+                border: `1px solid ${active ? "rgb(var(--accent-participante))" : "rgb(var(--border-default))"}`,
+                color: active ? "rgb(var(--text-primary))" : "rgb(var(--text-muted))",
+              }}
+            >
+              <span className="text-[8px] uppercase tracking-wide opacity-70 flex-shrink-0">{s === "home" ? "Local" : "Visitante"}</span>
+              <Flag country={t} size="sm" />
+              <span className="truncate">{t}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-[10px] text-text-muted">
+        {placeholder ? (
+          "Equipo por determinar."
+        ) : (
+          <>
+            Pasar a {cfg.nextLabel}: <span className="font-semibold text-text-secondary">+{cfg.points} pts</span>
+            {" · "}{aciertos} {aciertos === 1 ? "acierto" : "aciertos"}
+          </>
+        )}
+      </p>
+
+      {placeholder ? (
+        <EmptyState text="Cuando se confirme el equipo se mostrarán las predicciones." />
+      ) : rows.length === 0 ? (
+        <EmptyState text="Sin predicciones todavía." />
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {rows.map(({ team: t, state }) => {
+            const isMine = t.userId === currentUserId;
+            return (
+              <div
+                key={t.id}
+                className="card flex items-center gap-2.5 !py-2.5 !px-3"
+                style={{
+                  borderLeft: isMine ? "3px solid rgb(var(--accent-participante))" : undefined,
+                  background: isMine ? "rgba(63,157,78,0.04)" : undefined,
+                }}
+              >
+                <span className="font-display text-xs font-bold text-text-faint min-w-[24px]">#{t.currentRank}</span>
+                <InitialsAvatar name={t.name} size={36} avatarUrl={t.avatarUrl} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary truncate">{t.name}</p>
+                  <p className="text-[10px] text-text-muted truncate">@{t.username}</p>
+                </div>
+                <KnockoutPickBadge state={state} points={cfg.points} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MatchOverlay({
   match,
@@ -942,7 +1150,14 @@ function MatchOverlay({
           <Users size={11} /> Predicciones de la peñita
         </h4>
 
-        {!ref ? (
+        {match.stage !== "group" ? (
+          <KnockoutPredictions
+            match={match}
+            participants={participants}
+            adminResults={adminResults}
+            currentUserId={currentUserId}
+          />
+        ) : !ref ? (
           <EmptyState text="No se ha podido vincular este partido con los picks del club." />
         ) : rows.length === 0 ? (
           <EmptyState text="Sin predicciones todavía." />
