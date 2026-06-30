@@ -12,10 +12,12 @@
  *
  * Notas:
  *  - "N.º Grupo X" se resuelve con `adminResults.groupPositions` (posición inequívoca).
- *  - "Ganador N" / "Perdedor N" se resuelven de forma recursiva si el partido N tiene
- *    marcador oficial y el equipo ganador/perdedor es a su vez resoluble.
- *  - "Mejor 3.º ..." NO se resuelve: el panel de Admin no almacena la asignación de
- *    los mejores terceros a cada cruce, así que se conserva el placeholder.
+ *  - "Ganador N" / "Perdedor N": el ganador se toma de las listas de avance del
+ *    admin (Admin → Eliminatorias) — la misma fuente que el ranking — y solo si
+ *    esa lista está vacía se decide por el marcador oficial.
+ *  - "Mejor 3.º ..." se resuelve como el 3.º del grupo que el admin haya asignado
+ *    a ese hueco en `adminResults.bestThirdAssignments` (si todavía no hay
+ *    asignación o posiciones, se conserva el placeholder).
  */
 import { GROUPS } from "@/lib/data";
 import { WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
@@ -112,7 +114,17 @@ function resolveSlot(slot: string, admin: AdminResults, visiting: Set<number>): 
     return TEAM_SET.has(chosen) ? chosen : slot;
   }
 
-  // "Mejor 3.º ..." y cualquier otro caso no resoluble → placeholder.
+  // "Mejor 3.º ..." → 3.º del grupo que el admin haya asignado a este hueco.
+  if (/^Mejor 3\.º/.test(slot)) {
+    const group = admin.bestThirdAssignments?.[slot];
+    if (group) {
+      const team = teamAtGroupPosition(group, 3, admin);
+      if (team) return team;
+    }
+    return slot;
+  }
+
+  // Cualquier otro caso no resoluble → placeholder.
   return slot;
 }
 
