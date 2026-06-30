@@ -187,36 +187,37 @@ function mergeScheduleWithApi(
       groupApiByPair.set(`${normalizeKey(f.awayTeam)}|${normalizeKey(f.homeTeam)}`, f);
     });
 
-  // Index API fixtures por stage (para knockouts, asignación posicional)
-  const apiByStage = new Map<MatchStage, ApiFixtureItem[]>();
-  STAGE_ORDER.forEach((s) => {
-    const list = fixtures
-      .filter((f) => f.stage === s)
-      .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
-    apiByStage.set(s, list);
-  });
-  const stageOffsets = new Map<MatchStage, number>();
-  STAGE_ORDER.forEach((s) => stageOffsets.set(s, 0));
+  // Index API fixtures de ELIMINATORIAS por par de equipos (ambas orientaciones).
+  // Antes se emparejaban por POSICIÓN (orden de WORLD_CUP_MATCHES contra el orden
+  // por hora de la API). Como el #id de partido NO va en orden cronológico, los
+  // datos en vivo (marcador, estado, cronología) se asignaban al cruce
+  // equivocado. Emparejar por los equipos ya resueltos es robusto frente al orden.
+  const knockoutApiByPair = new Map<string, ApiFixtureItem>();
+  fixtures
+    .filter((f) => f.stage !== "group")
+    .forEach((f) => {
+      knockoutApiByPair.set(`${normalizeKey(f.homeTeam)}|${normalizeKey(f.awayTeam)}`, f);
+      knockoutApiByPair.set(`${normalizeKey(f.awayTeam)}|${normalizeKey(f.homeTeam)}`, f);
+    });
 
   const merged: MatchView[] = WORLD_CUP_MATCHES.map((m) => {
-    let api: ApiFixtureItem | undefined;
-
-    if (m.stage === "group") {
-      api = groupApiByPair.get(`${normalizeKey(m.homeTeam)}|${normalizeKey(m.awayTeam)}`);
-    } else {
-      const list = apiByStage.get(m.stage) || [];
-      const idx = stageOffsets.get(m.stage) ?? 0;
-      api = list[idx];
-      stageOffsets.set(m.stage, idx + 1);
-    }
-
-    const manual = getAdminResultOverride(m.id, adminResults);
-    const effectiveResult = manual || api;
-
     // Task 5: en fase final, sustituir "1.º Grupo H" etc. por el país real
     // cuando el admin ya ha cargado posiciones/resultados oficiales. Si aún no
     // está determinado, se conserva el placeholder original.
     const { homeTeam, awayTeam } = resolveKnockoutMatchTeams(m, adminResults);
+
+    let api: ApiFixtureItem | undefined;
+    if (m.stage === "group") {
+      api = groupApiByPair.get(`${normalizeKey(m.homeTeam)}|${normalizeKey(m.awayTeam)}`);
+    } else {
+      // Emparejar por los equipos YA resueltos del cruce. Si todavía son
+      // placeholders (ronda sin determinar) no habrá datos en vivo, que es lo
+      // correcto: ese partido aún no se juega.
+      api = knockoutApiByPair.get(`${normalizeKey(homeTeam)}|${normalizeKey(awayTeam)}`);
+    }
+
+    const manual = getAdminResultOverride(m.id, adminResults);
+    const effectiveResult = manual || api;
 
     return {
       id: m.id,
