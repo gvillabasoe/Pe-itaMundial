@@ -781,10 +781,10 @@ export default function VersusPage() {
             // Resultado oficial del admin para esta ronda → puntos por acierto.
             const adminRoundTeams = new Set((adminResults.knockoutRounds[round.key] || []).filter(Boolean));
             const roundConfigured = adminRoundTeams.size >= adminCount;
-            const statusFor = (inSet: boolean): MatchPickPointStatus => {
-              if (!roundConfigured) return "pending";
-              return inSet ? "correct" : "wrong";
-            };
+            // Verde en cuanto el equipo está clasificado a esa ronda (aunque no
+            // esté completa); rojo solo si la ronda ya está completa y no aparece.
+            const statusFor = (inSet: boolean): MatchPickPointStatus =>
+              inSet ? "correct" : roundConfigured ? "wrong" : "pending";
 
             // Filtrar según vsFilter
             const rows = Array.from(allTeams).map((country) => {
@@ -820,7 +820,7 @@ export default function VersusPage() {
                         className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 py-0.5 border-t border-[rgb(var(--divider)/0.06)] first:border-0">
                         <div className="flex items-center justify-center gap-1">
                           {row.inBase
-                            ? <><Flag country={row.country} size="sm" /><span className="truncate text-[11px]">{row.country}</span><PickChip status={statusFor(true)} points={row.hit ? round.pts : 0} /></>
+                            ? <><Flag country={row.country} size="sm" /><span className="truncate text-[11px]">{row.country}</span><PickChip status={statusFor(row.hit)} points={row.hit ? round.pts : 0} /></>
                             : <span className="text-[11px] text-text-faint">—</span>}
                         </div>
                         <span className={`w-6 text-center text-[11px] font-bold ${row.same ? "text-success" : "text-accent-versus"}`}>
@@ -828,7 +828,7 @@ export default function VersusPage() {
                         </span>
                         <div className="flex items-center justify-center gap-1">
                           {row.inRef
-                            ? <><Flag country={row.country} size="sm" /><span className={`truncate text-[11px] ${!row.same ? "text-accent-versus" : ""}`}>{row.country}</span>{mode === "participante" ? <PickChip status={statusFor(true)} points={row.hit ? round.pts : 0} /> : null}</>
+                            ? <><Flag country={row.country} size="sm" /><span className={`truncate text-[11px] ${!row.same ? "text-accent-versus" : ""}`}>{row.country}</span>{mode === "participante" ? <PickChip status={statusFor(row.hit)} points={row.hit ? round.pts : 0} /> : null}</>
                             : <span className="text-[11px] text-text-faint">—</span>}
                         </div>
                       </div>
