@@ -891,19 +891,25 @@ function KnockoutPredictions({ match, participants, adminResults, currentUserId 
   const rows = useMemo(() => {
     if (!cfg || placeholder) return [] as { team: Team; state: KoState }[];
     const official = cfg.officialSet(adminResults);
-    const complete = cfg.resolved(adminResults);
+    // Este cruce queda decidido en cuanto uno de los dos equipos del partido
+    // aparece en la siguiente ronda (avanza exactamente uno por cruce). Así el
+    // fallo se pinta en ROJO al resolverse ESTE cruce, sin esperar a que se
+    // complete el resto de la ronda.
+    const crossResolved = official.has(match.homeTeam) || official.has(match.awayTeam);
     return participants
       .map((t) => {
         const picked = cfg.pickCountries(t).includes(team);
-        // Verde en cuanto el equipo está clasificado a la siguiente ronda
-        // (aunque la ronda no esté completa); rojo solo si la ronda ya está
-        // completa y el equipo no aparece; si no, pendiente.
+        // Verde: la tenías avanzando y ya está clasificada a la siguiente ronda.
+        // Rojo 0: la tenías avanzando pero este cruce ya se resolvió y NO pasó.
+        // Pendiente: la tenías avanzando y el cruce aún no está decidido.
+        // Gris 0 ("none"): no la tenías avanzando (la diste por eliminada en una
+        // ronda previa de tu bracket) → no es fallo.
         let state: KoState = "none";
-        if (picked) state = official.has(team) ? "hit" : complete ? "miss" : "pending";
+        if (picked) state = official.has(team) ? "hit" : crossResolved ? "miss" : "pending";
         return { team: t, state };
       })
       .sort((a, b) => a.team.currentRank - b.team.currentRank);
-  }, [cfg, placeholder, team, participants, adminResults]);
+  }, [cfg, placeholder, team, participants, adminResults, match]);
 
   if (!cfg) return <EmptyState text="Sin predicciones para esta ronda." />;
 
