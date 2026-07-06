@@ -19,11 +19,12 @@ import {
 import { useScoredParticipants } from "@/lib/use-scored-participants";
 
 // ─── Cuenta atrás encadenada con marcador en vivo ─────
-// Secuencia: inauguración → España vs Cabo Verde → España vs Arabia Saudí
-// → Uruguay vs España. Antes de cada partido, cuenta atrás; durante el
-// partido, marcador en vivo (mismo endpoint que Resultados); 1 hora
-// después de acabar, cuenta atrás del siguiente. Lógica en
-// lib/home-countdown.ts; equipos y horarios del calendario oficial.
+// Secuencia: inauguración → fase de grupos de España (vs Cabo Verde, vs Arabia
+// Saudí, vs Uruguay) → y, a partir de ahí, sus partidos de ELIMINATORIAS según
+// España avanza (los cruces se resuelven con los datos del admin). Antes de cada
+// partido, cuenta atrás; durante el partido, marcador en vivo (mismo endpoint
+// que Resultados); 1 hora después de acabar, cuenta atrás del siguiente. Lógica
+// en lib/home-countdown.ts; equipos y horarios del calendario oficial.
 
 function formatKickoffLabel(kickoffIso: string): string {
   const date = new Date(kickoffIso);
@@ -45,6 +46,7 @@ function formatKickoffLabel(kickoffIso: string): string {
 function UpcomingMatchCountdown() {
   // Se monta con el primer partido (HTML estático estable) y tras hidratar
   // re-evalúa cada segundo qué toca mostrar.
+  const { adminResults } = useScoredParticipants();
   const [now, setNow] = useState<number | null>(null);
   const [fixturesByPair, setFixturesByPair] = useState<Map<string, HomeFixture>>(
     () => new Map()
@@ -57,7 +59,9 @@ function UpcomingMatchCountdown() {
     return () => clearInterval(iv);
   }, []);
 
-  const entries = useMemo(() => buildHomeCountdownEntries(), []);
+  // La secuencia incluye la fase de grupos de España y, a partir de ahí, sus
+  // cruces de eliminatorias según avanza (resueltos con los datos del admin).
+  const entries = useMemo(() => buildHomeCountdownEntries(adminResults), [adminResults]);
 
   const state = resolveHomeCardState(
     entries,

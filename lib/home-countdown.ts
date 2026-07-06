@@ -1,4 +1,7 @@
 import { getKickoffByMatchId } from "@/lib/worldcup/kickoffs";
+import { WORLD_CUP_MATCHES } from "@/lib/worldcup/schedule";
+import { resolveKnockoutMatchTeams } from "@/lib/worldcup/resolve-knockout";
+import { TEAM_SET, type AdminResults } from "@/lib/admin-results";
 
 // ════════════════════════════════════════════════════════════
 // Lógica de la tarjeta de la home: cuenta atrás encadenada con
@@ -22,6 +25,11 @@ export const HOME_COUNTDOWN_SEQUENCE = [
   { matchId: 38, homeTeam: "España", awayTeam: "Arabia Saudí" },
   { matchId: 66, homeTeam: "Uruguay", awayTeam: "España" },
 ] as const;
+
+// Selección protagonista de la tarjeta: tras la fase de grupos, la cuenta atrás
+// sigue a España por las eliminatorias. Sus cruces se resuelven con los datos
+// del admin (posiciones de grupo, listas de rondas y mejores terceros).
+export const FEATURED_TEAM = "España";
 
 export const HOLD_AFTER_FINISH_MS = 60 * 60 * 1000; // 1 hora
 export const MATCH_WINDOW_FALLBACK_MS = 3 * 60 * 60 * 1000; // 3 horas
@@ -79,11 +87,34 @@ export interface HomeCardState {
   fixture: HomeFixture | null;
 }
 
-export function buildHomeCountdownEntries(): HomeCountdownEntry[] {
-  return HOME_COUNTDOWN_SEQUENCE.map((item) => {
+export function buildHomeCountdownEntries(adminResults?: AdminResults): HomeCountdownEntry[] {
+  // Base fija: inauguración + fase de grupos de España.
+  const base: HomeCountdownEntry[] = HOME_COUNTDOWN_SEQUENCE.map((item) => {
     const kickoff = getKickoffByMatchId(item.matchId);
     return { ...item, kickoff, time: new Date(kickoff).getTime() };
   });
+
+  if (!adminResults) return base;
+
+  // Dinámico: partidos de ELIMINATORIAS de España. Resolvemos cada cruce con los
+  // datos del admin y añadimos aquellos en los que YA se conocen los dos equipos
+  // y uno es España. Así la tarjeta va avanzando a medida que España pasa de
+  // ronda (dieciseisavos → octavos → cuartos → semis → final).
+  const seen = new Set<number>(base.map((e) => e.matchId));
+  const target = normalizeKey(FEATURED_TEAM);
+  const knockout: HomeCountdownEntry[] = [];
+  for (const m of WORLD_CUP_MATCHES) {
+    if (m.stage === "group" || seen.has(m.id)) continue;
+    const { homeTeam, awayTeam } = resolveKnockoutMatchTeams(m, adminResults);
+    // Cruce aún sin determinar (algún lado sigue siendo un placeholder) → fuera.
+    if (!TEAM_SET.has(homeTeam) || !TEAM_SET.has(awayTeam)) continue;
+    if (normalizeKey(homeTeam) !== target && normalizeKey(awayTeam) !== target) continue;
+    const kickoff = getKickoffByMatchId(m.id);
+    knockout.push({ matchId: m.id, homeTeam, awayTeam, kickoff, time: new Date(kickoff).getTime() });
+  }
+
+  // Encadenamos todo por hora de inicio (grupos primero, luego eliminatorias).
+  return [...base, ...knockout].sort((a, b) => a.time - b.time);
 }
 
 function normalizeKey(name: string): string {
