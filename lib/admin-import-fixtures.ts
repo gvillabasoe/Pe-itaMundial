@@ -1,7 +1,8 @@
-import { WORLD_CUP_MATCHES, type MatchStage, type WorldCupMatch } from "@/lib/worldcup/schedule";
+import { WORLD_CUP_MATCHES, type MatchStage } from "@/lib/worldcup/schedule";
 import { GROUP_MATCH_IDS, decideFinalGroupPositions, type GroupMatchScore } from "@/lib/worldcup/group-tables";
 import { TEAM_SET, KNOCKOUT_ADMIN_COUNTS, type KnockoutRoundKey } from "@/lib/admin-results";
 import { isConfiguredMatchResult, type AdminMatchResult, type AdminResults } from "@/lib/admin-results";
+import { resolveKnockoutMatchTeams } from "@/lib/worldcup/resolve-knockout";
 
 // ════════════════════════════════════════════════════════════
 // Importación de resultados finalizados desde /api/results/fixtures
@@ -17,8 +18,10 @@ import { isConfiguredMatchResult, type AdminMatchResult, type AdminResults } fro
 //         Si la API trae el local/visitante invertido respecto al
 //         calendario oficial, el marcador se voltea para que los
 //         puntos se calculen contra el orden correcto.
-//       · Eliminatorias → asignación posicional por fase, ordenando
-//         por fecha de inicio (igual que la pestaña Resultados).
+//       · Eliminatorias → por pareja de equipos ya resueltos (posiciones
+//         de grupo / listas del admin), en ambos órdenes, volteando el
+//         marcador si la API trae local/visitante invertido. (Antes era
+//         posicional por hora y asignaba el marcador al cruce equivocado.)
 //   - No se guarda nada automáticamente: esta función solo devuelve
 //     el formulario actualizado. El admin revisa y pulsa "Guardar".
 // ════════════════════════════════════════════════════════════
@@ -112,7 +115,8 @@ export function sanitizeFixtures(raw: unknown): ApiFixtureLike[] {
  */
 export function buildResultsByMatchId(
   fixtures: ApiFixtureLike[],
-  statuses: Set<string> = FINISHED_STATUSES
+  statuses: Set<string> = FINISHED_STATUSES,
+  admin?: AdminResults
 ): Map<string, { home: number; away: number }> {
   const results = new Map<string, { home: number; away: number }>();
 
@@ -124,22 +128,21 @@ export function buildResultsByMatchId(
       groupApiByPair.set(pairKey(f.homeTeam, f.awayTeam), f);
     });
 
-  // Index de eliminatorias por fase, ordenadas por kickoff (posicional)
-  const apiByStage = new Map<MatchStage, ApiFixtureLike[]>();
-  STAGE_ORDER.forEach((stage) => {
-    const list = fixtures
-      .filter((f) => f.stage === stage)
-      .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
-    apiByStage.set(stage, list);
-  });
-  const stageOffsets = new Map<MatchStage, number>();
-  STAGE_ORDER.forEach((stage) => stageOffsets.set(stage, 0));
+  // Index de ELIMINATORIAS por pareja de equipos (ambas orientaciones). Antes se
+  // asignaba por POSICIÓN (orden por hora vs sortOrder del calendario) y, como el
+  // #id de partido NO es cronológico, el marcador acababa en el cruce equivocado
+  // (el mismo bug que en la pestaña Resultados). Emparejar por los equipos ya
+  // resueltos lo arregla. Necesita `admin` para resolver los cruces
+  // ("1.º Grupo X", "Ganador N", "Mejor 3.º …"); sin él no se importan
+  // eliminatorias (p. ej. las tablas de grupos en vivo no lo necesitan).
+  const knockoutApiByPair = new Map<string, ApiFixtureLike>();
+  fixtures
+    .filter((f) => f.stage !== "group")
+    .forEach((f) => {
+      knockoutApiByPair.set(pairKey(f.homeTeam, f.awayTeam), f);
+    });
 
-  const scheduleSorted: WorldCupMatch[] = [...WORLD_CUP_MATCHES].sort(
-    (a, b) => a.sortOrder - b.sortOrder
-  );
-
-  for (const match of scheduleSorted) {
+  for (const match of WORLD_CUP_MATCHES) {
     let api: ApiFixtureLike | undefined;
     let flipped = false;
 
@@ -150,10 +153,15 @@ export function buildResultsByMatchId(
         if (api) flipped = true;
       }
     } else {
-      const list = apiByStage.get(match.stage) || [];
-      const idx = stageOffsets.get(match.stage) ?? 0;
-      api = list[idx];
-      stageOffsets.set(match.stage, idx + 1);
+      if (!admin) continue; // sin admin no se pueden resolver los cruces
+      const { homeTeam, awayTeam } = resolveKnockoutMatchTeams(match, admin);
+      // Cruce aún sin determinar (placeholders sin resolver) → no se importa.
+      if (!TEAM_SET.has(homeTeam) || !TEAM_SET.has(awayTeam)) continue;
+      api = knockoutApiByPair.get(pairKey(homeTeam, awayTeam));
+      if (!api) {
+        api = knockoutApiByPair.get(pairKey(awayTeam, homeTeam));
+        if (api) flipped = true;
+      }
     }
 
     if (!api || !hasScoreWithStatus(api, statuses)) continue;
@@ -187,7 +195,7 @@ export async function importFinishedResultsFromApi(
     throw new Error(`La API no ha devuelto partidos${reason}`);
   }
 
-  const finishedById = buildResultsByMatchId(fixtures, FINISHED_STATUSES);
+  const finishedById = buildResultsByMatchId(fixtures, FINISHED_STATUSES, form);
 
   let imported = 0;
   let skippedConfigured = 0;
@@ -293,7 +301,7 @@ export function applyApiResultsToAdminResults(
   const fixtures = sanitizeFixtures(rawFixtures);
   if (fixtures.length === 0) return { merged: admin, filled: [] };
 
-  const byMatchId = buildResultsByMatchId(fixtures, statuses);
+  const byMatchId = buildResultsByMatchId(fixtures, statuses, admin);
   if (byMatchId.size === 0) return { merged: admin, filled: [] };
 
   const filled: string[] = [];

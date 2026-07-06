@@ -217,7 +217,12 @@ function mergeScheduleWithApi(
     }
 
     const manual = getAdminResultOverride(m.id, adminResults);
-    const effectiveResult = manual || api;
+    // En eliminatorias, matchResults puede venir corrupto de una importación con
+    // el bug posicional (marcador de otro partido). Damos prioridad al dato de la
+    // API ya emparejado por equipos —igual que el cuadro— y solo caemos al
+    // marcador manual si la API aún no tiene ese cruce. En grupos se mantiene la
+    // prioridad del resultado oficial confirmado por el admin.
+    const effectiveResult = m.stage === "group" ? (manual || api) : (api || manual);
 
     return {
       id: m.id,
