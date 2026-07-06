@@ -3,9 +3,11 @@
 // ════════════════════════════════════════════════════════════
 // Resuelve el cuadro de 32 desde la plantilla fija y hace avanzar a los
 // ganadores. El marcador de cada cruce son los goles (puntos) de esa ventana.
-// Empate en eliminatoria → desempate por acumulado general; si persiste, id.
+// Empate en eliminatoria → desempate por el acumulado de goles HASTA esa
+// ventana (= ranking general al cierre de esa ronda, ya congelado). Como las
+// ventanas cerradas no cambian, un sorpasso posterior no altera el cruce.
 
-import type { Ventana } from "@/lib/scoring";
+import { VENTANAS, type Ventana } from "@/lib/scoring";
 import type { BracketMatch, CupRound } from "@/lib/cup/types";
 import { R32_TEMPLATE } from "@/lib/cup/template";
 import type { GoalsMap } from "@/lib/cup/groups";
@@ -24,6 +26,21 @@ export interface CupBracket {
   final: BracketMatch;
   third: BracketMatch;
   championId?: string;
+}
+
+// Acumulado de goles (puntos) de una porra HASTA una ventana inclusive, en el
+// orden cronológico de VENTANAS. Equivale a su ranking al cierre de esa ronda:
+// una vez cerrada la ronda, este valor ya no cambia (las ventanas anteriores
+// están fijadas), así que sirve de desempate estable e inmune a sorpassos.
+function cumThrough(goals: GoalsMap, id: string, upTo: Ventana): number {
+  const g = goals[id];
+  if (!g) return 0;
+  let sum = 0;
+  for (const v of VENTANAS) {
+    sum += g[v] ?? 0;
+    if (v === upTo) break;
+  }
+  return sum;
 }
 
 function decide(
@@ -48,10 +65,20 @@ function decide(
   let winnerId: string;
   if (a !== b) winnerId = a > b ? homeId : awayId;
   else {
-    const ta = totals[homeId] ?? 0;
-    const tb = totals[awayId] ?? 0;
-    if (ta !== tb) winnerId = ta > tb ? homeId : awayId;
-    else winnerId = homeId <= awayId ? homeId : awayId;
+    // Desempate CONGELADO: acumulado de goles hasta ESTA ventana (= ranking
+    // general al cierre de esta ronda). Al estar ya cerradas esas ventanas, un
+    // sorpasso en una ventana posterior NO puede alterar este cruce.
+    const ca = cumThrough(goals, homeId, ventana);
+    const cb = cumThrough(goals, awayId, ventana);
+    if (ca !== cb) winnerId = ca > cb ? homeId : awayId;
+    else {
+      // Empate también en el acumulado (prácticamente imposible): último
+      // recurso — total general y, si aún persiste, el id (estable).
+      const ta = totals[homeId] ?? 0;
+      const tb = totals[awayId] ?? 0;
+      if (ta !== tb) winnerId = ta > tb ? homeId : awayId;
+      else winnerId = homeId <= awayId ? homeId : awayId;
+    }
   }
   const loserId = winnerId === homeId ? awayId : homeId;
   return { homeGoals: a, awayGoals: b, winnerId, loserId };

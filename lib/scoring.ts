@@ -251,28 +251,28 @@ function scoreKnockoutRounds(team: Team, adminResults: AdminResults) {
       getPicks: () => (team.knockoutPicks?.["dieciseisavos"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "octavos",
       pts: ptsByKey["octavos"] ?? 10,
-      win: "R16",
+      win: "R32",
     },
     // Cuartos: los 8 que el usuario eligió para avanzar FROM octavos
     {
       getPicks: () => (team.knockoutPicks?.["octavos"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "cuartos",
       pts: ptsByKey["cuartos"] ?? 15,
-      win: "QF",
+      win: "R16",
     },
     // Semis: los 4 que el usuario eligió para avanzar FROM cuartos
     {
       getPicks: () => (team.knockoutPicks?.["cuartos"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "semis",
       pts: ptsByKey["semis"] ?? 20,
-      win: "SF",
+      win: "QF",
     },
     // Final: los 2 que el usuario eligió para avanzar FROM semis
     {
       getPicks: () => (team.knockoutPicks?.["semis"] || []).map((p) => p.country).filter(Boolean),
       adminKey: "final",
       pts: ptsByKey["final"] ?? 25,
-      win: "FINAL_KO",
+      win: "SF",
     },
   ];
 
