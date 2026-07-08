@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart3, Trophy, Shield, Swords, Crown } from "lucide-react";
+import { Home, BarChart3, Trophy, Shield, Swords } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: Home },
   { href: "/clasificacion", label: "Ranking", icon: BarChart3 },
   { href: "/resultados", label: "Resultados", icon: Trophy },
-  { href: "/copa", label: "Copa", icon: Crown },
   { href: "/mi-club", label: "Mi Club", icon: Shield },
   { href: "/versus", label: "Versus", icon: Swords },
 ];
@@ -25,10 +24,15 @@ export function BottomNav() {
             href={item.href}
             aria-label={item.label}
             aria-current={isActive ? "page" : undefined}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10px] font-medium transition-all duration-150 no-underline ${isActive ? "text-gold" : "text-text-muted"}`}
+            className={`relative flex flex-col items-center gap-1 px-3 pt-2 pb-1 text-[10px] transition-colors duration-150 no-underline ${isActive ? "text-gold" : "text-text-muted"}`}
           >
-            <item.icon size={19} strokeWidth={isActive ? 2.2 : 1.8} aria-hidden="true" />
-            <span className={isActive ? "font-semibold" : ""}>{item.label}</span>
+            <span
+              aria-hidden="true"
+              className={`absolute top-0 left-1/2 h-[3px] w-6 rounded-full bg-gold transition-opacity duration-150 ${isActive ? "opacity-100" : "opacity-0"}`}
+              style={{ transform: "translate(-50%, -8px)" }}
+            />
+            <item.icon size={20} strokeWidth={isActive ? 2.4 : 1.8} aria-hidden="true" />
+            <span className={isActive ? "font-semibold" : "font-medium"}>{item.label}</span>
           </Link>
         );
       })}

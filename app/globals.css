@@ -41,7 +41,6 @@
   --accent-participante: 63 157 78;
   --accent-versus: 214 51 111;
   --accent-clasificacion: 181 138 27;
-  --accent-copa: 45 108 223;
 
   --glass-bg: 255 255 255;
   --shadow-color: 15 23 42;
@@ -137,12 +136,11 @@ body {
     @apply rounded-2xl p-4 transition-all duration-200;
     background: rgb(var(--bg-surface));
     border: 1px solid rgb(var(--border-subtle));
-    box-shadow: 0 1px 2px rgba(var(--shadow-color), 0.04);
+    box-shadow: 0 1px 1px rgba(var(--shadow-color), 0.05), 0 1px 3px rgba(var(--shadow-color), 0.04);
   }
   .card:hover {
     border-color: rgb(var(--border-default));
-    box-shadow: 0 6px 18px rgba(var(--shadow-color), 0.07);
-    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(var(--shadow-color), 0.05), 0 8px 20px rgba(var(--shadow-color), 0.07);
   }
   .card-glow { box-shadow: 0 0 32px rgba(var(--gold), 0.18); }
   .card-elevated {
@@ -225,18 +223,9 @@ body {
   .pill.active {
     background: rgb(var(--gold-soft));
     color: rgb(var(--gold));
-    border-color: rgba(var(--gold), 0.3);
-    font-weight: 600;
-  }
-  .pill.active.pill-copa {
-    background: rgb(var(--accent-copa) / 0.12);
-    color: rgb(var(--accent-copa));
-    border-color: rgb(var(--accent-copa) / 0.35);
-  }
-  .pill.active.pill-club {
-    background: rgb(var(--accent-participante) / 0.12);
-    color: rgb(var(--accent-participante));
-    border-color: rgb(var(--accent-participante) / 0.35);
+    border-color: rgba(var(--gold), 0.45);
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1px rgba(var(--gold), 0.18), 0 2px 6px rgba(var(--gold), 0.14);
   }
 
   .nav-bottom {
@@ -671,6 +660,90 @@ body {
   }
 
   .admin-group-card { padding: 16px; }
+
+  /* ════════════════════════════════════════════════════════════
+     APP DE RESULTADOS — vocabulario visual (aditivo, no altera lo existente)
+     ════════════════════════════════════════════════════════════ */
+
+  /* Numeral deportivo: marcadores, puntos, contadores. */
+  .stat-num {
+    font-family: 'Outfit', sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+
+  /* Etiqueta de sección pequeña, en mayúsculas. */
+  .section-label {
+    @apply text-[11px] font-semibold uppercase;
+    letter-spacing: 0.14em;
+    color: rgb(var(--text-muted));
+  }
+
+  /* Control segmentado (pestañas tipo app). */
+  .seg {
+    @apply inline-flex items-center gap-1 p-1 rounded-full;
+    background: rgb(var(--bg-muted));
+    border: 1px solid rgb(var(--border-subtle));
+  }
+  .seg-item {
+    @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all duration-150 whitespace-nowrap;
+    color: rgb(var(--text-muted));
+    background: transparent;
+    border: none;
+  }
+  .seg-item:hover { color: rgb(var(--text-secondary)); }
+  .seg-item.active {
+    background: rgb(var(--bg-surface));
+    color: rgb(var(--text-warm));
+    box-shadow: 0 1px 3px rgba(var(--shadow-color), 0.10);
+  }
+
+  /* Fila de listado densa con separador (partidos, ranking, tablas). */
+  .list-row {
+    @apply flex items-center gap-3 px-3 py-2.5 transition-colors duration-150;
+    border-bottom: 1px solid rgb(var(--divider));
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-row:hover { background: rgba(var(--text-muted), 0.05); }
+
+  /* Caja de marcador compacta. */
+  .score-box {
+    @apply inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1;
+    min-width: 46px;
+    background: rgb(var(--bg-muted));
+    color: rgb(var(--text-warm));
+    font-family: 'Outfit', sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .score-box--live { background: rgba(var(--danger), 0.12); color: rgb(var(--danger)); }
+
+  /* Cabecera de sección adhesiva (fecha/etapa) con desenfoque. */
+  .sticky-head {
+    @apply sticky z-20 flex items-center gap-2 px-1 py-2;
+    top: 0;
+    background: rgba(var(--bg-canvas), 0.86);
+    backdrop-filter: blur(12px) saturate(160%);
+  }
+
+  /* Número de posición (ranking). */
+  .rank-num {
+    @apply inline-flex items-center justify-center rounded-full text-xs font-bold tabular-nums shrink-0;
+    width: 28px;
+    height: 28px;
+    background: rgb(var(--bg-muted));
+    color: rgb(var(--text-secondary));
+  }
+
+  /* Chip neutro pequeño (ciudad, ronda, grupo). */
+  .tag-chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold;
+    background: rgb(var(--bg-muted));
+    color: rgb(var(--text-secondary));
+  }
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
