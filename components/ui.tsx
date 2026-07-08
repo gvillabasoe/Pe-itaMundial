@@ -106,13 +106,19 @@ export function GroupBadge({ group }: { group: string }) {
 // ─── SectionTitle ─────────────────────────────────────
 
 export function SectionTitle({ children, accent, icon: Icon, right }: { children: ReactNode; accent?: string; icon?: LucideIcon; right?: ReactNode }) {
+  const color = accent ?? "rgb(var(--gold))";
   return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        {Icon && <Icon size={16} style={{ color: accent ?? "rgb(var(--gold))" }} />}
-        <h2 className="font-display text-base font-bold tracking-tight text-text-warm">{children}</h2>
-      </div>
-      {right}
+    <div className="mb-3.5 flex items-center gap-2.5">
+      {Icon ? (
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-bg-2" style={{ color }}>
+          <Icon size={15} strokeWidth={2.3} />
+        </span>
+      ) : (
+        <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: color }} />
+      )}
+      <h2 className="font-display text-[15px] font-extrabold tracking-tight text-text-warm">{children}</h2>
+      <span className="mx-0.5 h-px flex-1" style={{ background: "rgb(var(--divider))" }} />
+      {right ? <div className="shrink-0">{right}</div> : null}
     </div>
   );
 }

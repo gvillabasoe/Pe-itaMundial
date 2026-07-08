@@ -249,7 +249,7 @@ export default function HomePage() {
         <div className="relative z-[1] flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <span className="premium-kicker mb-3">IV Edición · Porra Mundial 2026</span>
+              <span className="mb-3 block text-[10px] font-bold uppercase tracking-[0.16em] text-gold">IV Edición · Porra Mundial 2026</span>
               <h1 className="font-display text-[34px] font-black leading-none tracking-[-0.05em] text-text-warm sm:text-[40px]">
                 Peñita Mundial
               </h1>
@@ -259,15 +259,15 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3">
             {[
               { label: "Participantes", value: String(submittedStats.participants) },
               { label: "Premio", value: formatCurrency(submittedStats.prizePool) },
               { label: "Porras", value: String(submittedStats.porras) },
-            ].map((item) => (
-              <div key={item.label} className="stat-tile text-center">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{item.label}</p>
-                <p className="mt-1 font-display text-[22px] font-black leading-none text-text-warm sm:text-[24px]">{item.value}</p>
+            ].map((item, i) => (
+              <div key={item.label} className={`px-1 text-center ${i > 0 ? "border-l border-[rgb(var(--divider)/0.6)]" : ""}`}>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.18em] text-text-muted">{item.label}</p>
+                <p className="stat-num mt-1.5 text-[28px] leading-none text-text-warm sm:text-[30px]">{item.value}</p>
               </div>
             ))}
           </div>

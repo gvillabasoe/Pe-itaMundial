@@ -515,28 +515,29 @@ export default function ResultadosPage() {
       )}
 
       {/* Sub-pestañas: Partidos · Tablas · Cuadro · Goleadores */}
-      <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
-        {([
-          ["partidos", "Partidos"],
-          ["tablas", "Tablas"],
-          ["cuadro", "Cuadro"],
-          ["goleadores", "Goleadores"],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            className={`pill ${resultsTab === key ? "active" : ""}`}
-            onClick={() => setResultsTab(key)}
-            style={{ whiteSpace: "nowrap" }}
-          >
-            {label}
-            {key === "partidos" && liveCount > 0 && (
-              <span
-                className="animate-pulse"
-                style={{ marginLeft: 5, display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#ef4444", verticalAlign: "middle" }}
-              />
-            )}
-          </button>
-        ))}
+      <div className="mb-3 overflow-x-auto pb-1">
+        <div className="seg w-max">
+          {([
+            ["partidos", "Partidos"],
+            ["tablas", "Tablas"],
+            ["cuadro", "Cuadro"],
+            ["goleadores", "Goleadores"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              className={`seg-item ${resultsTab === key ? "active" : ""}`}
+              onClick={() => setResultsTab(key)}
+            >
+              {label}
+              {key === "partidos" && liveCount > 0 && (
+                <span
+                  className="animate-pulse"
+                  style={{ marginLeft: 5, display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#ef4444", verticalAlign: "middle" }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {resultsTab === "tablas" && <LiveGroupTables />}
