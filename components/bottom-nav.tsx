@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart3, Trophy, Shield, Swords } from "lucide-react";
+import { Home, BarChart3, Trophy, Shield, Swords, Crown } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: Home },
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/resultados", label: "Resultados", icon: Trophy },
   { href: "/mi-club", label: "Mi Club", icon: Shield },
   { href: "/versus", label: "Versus", icon: Swords },
+  { href: "/copa", label: "Copa", icon: Crown },
 ];
 
 export function BottomNav() {
@@ -24,7 +25,7 @@ export function BottomNav() {
             href={item.href}
             aria-label={item.label}
             aria-current={isActive ? "page" : undefined}
-            className={`relative flex flex-col items-center gap-1 px-3 pt-2 pb-1 text-[10px] transition-colors duration-150 no-underline ${isActive ? "text-gold" : "text-text-muted"}`}
+            className={`relative flex flex-col items-center gap-1 px-2 pt-2 pb-1 text-[10px] transition-colors duration-150 no-underline ${isActive ? "text-gold" : "text-text-muted"}`}
           >
             <span
               aria-hidden="true"
