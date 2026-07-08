@@ -315,6 +315,7 @@ export default function ResultadosPage() {
   const liveMatchRef = useRef<HTMLDivElement | null>(null);
   const didLiveScroll = useRef(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchView | null>(null);
+  const didDeepLink = useRef(false);
 
   const { data, error, isLoading, mutate } = useSWR<ResultsApiPayload>(
     "/api/results/fixtures",
@@ -356,6 +357,23 @@ export default function ResultadosPage() {
     const result = mergeScheduleWithApi(data?.fixtures || [], adminResults);
     return result.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   }, [adminResults, data]);
+
+  // Deep-link: si se abre con ?match=<id> (p. ej. desde el cuadro de la Home),
+  // abre el detalle de ese partido, igual que al pulsarlo aquí. Solo una vez.
+  useEffect(() => {
+    if (didDeepLink.current || merged.length === 0) return;
+    const id = new URLSearchParams(window.location.search).get("match");
+    if (!id) {
+      didDeepLink.current = true;
+      return;
+    }
+    const target = merged.find((m) => String(m.id) === id);
+    if (target) {
+      setSelectedMatch(target);
+      setOpenSection(target.stage === "group" ? `group-${target.matchday}` : target.stage);
+      didDeepLink.current = true;
+    }
+  }, [merged]);
 
   // Primer partido en vivo (para auto-scroll y para abrir su sección)
   const liveMatch = useMemo(

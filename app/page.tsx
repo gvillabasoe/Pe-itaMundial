@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Activity, BarChart3, BookOpen, ChevronRight, Crown, Shield, Swords, Trophy, TrendingUp } from "lucide-react";
 import { Countdown, MatchupWithFlags, SectionTitle } from "@/components/ui";
+import { HomeKnockoutBracket } from "@/components/home-knockout-bracket";
 import { ACTIVITY, SCORING } from "@/lib/data";
 import {
   FINISHED_STATUSES,
@@ -231,7 +232,7 @@ const QUICK_LINKS = [
 ] as const;
 
 export default function HomePage() {
-  const { participants, hasRealParticipants, userTeamsStore } = useScoredParticipants();
+  const { participants, hasRealParticipants, userTeamsStore, adminResults } = useScoredParticipants();
   const top3 = participants.slice(0, 3);
   const medalColors = ["#D4AF37", "#C0C0C0", "#CD7F32"];
   const medalBg = ["rgba(212,175,55,0.09)", "rgba(192,192,192,0.07)", "rgba(205,127,50,0.08)"];
@@ -285,6 +286,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <HomeKnockoutBracket adminResults={adminResults} />
 
       <section className="mb-4 animate-fade-in" style={{ animationDelay: "0.04s" }}>
         <div className="grid grid-cols-2 gap-2.5">
